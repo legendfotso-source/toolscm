@@ -12,6 +12,11 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Third-party runtime assets copied in by `npm run assets` — vendored
+    // code we do not own and must not reformat.
+    "public/pdfjs/**",
+    "public/vendor/**",
+    "public/sw.js",
   ]),
 ]);
 

@@ -1,26 +1,145 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------
+   Tools.cm design tokens
+   Deep violet primary, generous white space, subtle borders.
+   Light-mode only by design: file utilities are read in bright rooms
+   and on cheap Android screens where dark themes wash out.
+------------------------------------------------------------------ */
+
+@theme {
+  --color-violet-deep: #6d28d9;
+  --color-violet-mid: #8b5cf6;
+  --color-violet-light: #f5f3ff;
+  --color-violet-border: #ddd6fe;
+
+  --color-surface: #ffffff;
+  --color-surface-alt: #fafafa;
+
+  --color-ink: #18181b;
+  --color-ink-soft: #71717a;
+  --color-line: #e4e4e7;
+
+  --color-success: #16a34a;
+  --color-success-light: #f0fdf4;
+  --color-danger: #dc2626;
+  --color-danger-light: #fef2f2;
+  --color-warn: #ca8a04;
+  --color-warn-light: #fefce8;
+
+  /* No web font on purpose.
+     A typeface download is 30-100 KB and a render delay before any text is
+     readable — paid for on every first visit, on the metered 3G connections
+     this product is built for. The system stack renders instantly and looks
+     native: Roboto on Android, San Francisco on iOS, Segoe on Windows.
+     To adopt a web font later, load it with next/font and put its CSS
+     variable at the front of this stack. */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
+    "Noto Sans", Arial, sans-serif;
+
+  --radius-card: 0.875rem;
+
+  --shadow-card: 0 1px 2px 0 rgb(24 24 27 / 0.04);
+  --shadow-lift: 0 4px 16px -4px rgb(109 40 217 / 0.12);
+  --shadow-modal: 0 24px 48px -12px rgb(24 24 27 / 0.18);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Visible, consistent focus ring for keyboard users everywhere. */
+:focus-visible {
+  outline: 2px solid var(--color-violet-deep);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@utility container-page {
+  width: 100%;
+  margin-inline: auto;
+  max-width: 76rem;
+  padding-inline: 1rem;
+}
+
+@media (min-width: 640px) {
+  .container-page {
+    padding-inline: 1.5rem;
+  }
+}
+
+/* Indeterminate progress bar — used only when the underlying library
+   gives us no real progress figure. Never paired with a fake number. */
+@keyframes tcm-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.tcm-indeterminate::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  width: 25%;
+  border-radius: 9999px;
+  background: linear-gradient(
+    90deg,
+    var(--color-violet-mid),
+    var(--color-violet-deep)
+  );
+  animation: tcm-indeterminate 1.15s ease-in-out infinite;
+}
+
+@keyframes tcm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.tcm-spin {
+  animation: tcm-spin 0.7s linear infinite;
+}
+
+/* Checkerboard behind transparent PNG previews so users can actually
+   see that the background was removed. */
+.tcm-checker {
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #efefef 25%, transparent 25%),
+    linear-gradient(-45deg, #efefef 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #efefef 75%),
+    linear-gradient(-45deg, transparent 75%, #efefef 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0px;
 }
