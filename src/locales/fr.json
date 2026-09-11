@@ -202,7 +202,9 @@
   "usage": {
     "remaining": "{count} opération(s) gratuite(s) restante(s) aujourd'hui",
     "remainingOne": "Dernière opération gratuite aujourd'hui",
-    "resetNote": "Votre limite se réinitialise à minuit."
+    "resetNote": "Votre limite se réinitialise à minuit.",
+    "today": "Aujourd'hui",
+    "unlimited": "Usage illimité"
   },
   "contact": {
     "title": "Contact",
@@ -247,5 +249,32 @@
     "copied": "Copié",
     "generate": "Générer",
     "download": "Télécharger"
+  },
+  "auth": {
+    "signIn": "Se connecter",
+    "signUp": "Créer un compte",
+    "signOut": "Se déconnecter",
+    "email": "Adresse email",
+    "password": "Mot de passe",
+    "signInTitle": "Connexion à votre compte",
+    "signUpTitle": "Créer un compte Tools.cm",
+    "signInSubtitle": "Un compte n'est nécessaire que pour gérer un abonnement Pro. Tous les outils restent utilisables sans compte.",
+    "noAccount": "Pas encore de compte ?",
+    "hasAccount": "Vous avez déjà un compte ?",
+    "continueGoogle": "Continuer avec Google",
+    "or": "ou",
+    "checkEmail": "Vérifiez votre boîte mail : nous vous avons envoyé un lien de confirmation.",
+    "invalidCredentials": "Email ou mot de passe incorrect.",
+    "weakPassword": "Choisissez un mot de passe d'au moins 8 caractères.",
+    "emailTaken": "Un compte existe déjà avec cette adresse.",
+    "unexpected": "La connexion a échoué. Réessayez dans un instant.",
+    "account": "Mon compte",
+    "accountTitle": "Mon compte",
+    "plan": "Formule",
+    "planFree": "Gratuit",
+    "planPro": "Pro",
+    "proUntil": "Actif jusqu'au {date}",
+    "notConfigured": "Les comptes ne sont pas encore activés sur ce déploiement.",
+    "working": "Un instant..."
   }
 }

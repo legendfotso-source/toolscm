@@ -6,11 +6,11 @@ PDF and image tools that run entirely in the browser. Built for people on
 mid-range Android phones and limited connections — Cameroon first, then the
 rest of the world.
 
-This repository is **Phase 1 + Phase 2** of the product plan: the brand, the
-design system, the tool engine, and twenty tools that genuinely work. Accounts,
-usage limits, payments and the admin dashboard (Phase 3) and the blog and
-analytics (Phase 4) are not built yet, and nothing in the interface pretends
-they are.
+This repository covers **Phases 1 and 2** in full — the brand, the design
+system, the tool engine and twenty tools that genuinely work — plus the
+**accounts, usage-limit and admin** part of Phase 3. Payment providers, the
+blog and analytics are not built, and nothing in the interface pretends they
+are.
 
 ---
 
@@ -102,9 +102,10 @@ this codebase.
 The badge on every tool page is driven by the tool's declared
 `processingMode`, not hard-coded, so it cannot drift away from the truth.
 
-- **No file is ever uploaded.** There is no upload endpoint. The app has no
-  server-side file handling at all — you can verify this by looking for an
-  `app/api` directory, which does not exist.
+- **No file is ever uploaded.** There is no upload endpoint, and no server-side
+  file handling anywhere. The only two API routes are `/api/usage` (which
+  receives a random device id and a tool name — no file, no filename) and
+  `/api/admin/settings`. You can read both in full; they are short.
 - **One third-party request, disclosed.** The two background tools download a
   ~40 MB segmentation model from `staticimgly.com` on first use. The model
   comes to the device; the photo never leaves it. This is stated on the tool
@@ -113,8 +114,9 @@ The badge on every tool page is driven by the tool's declared
 - **Everything else is served from our own origin** — pdf.js, its CMaps and
   fonts, and the image-compression worker are copied into `public/` rather than
   loaded from a CDN.
-- **The only thing stored in the browser** is the chosen language, under
-  `toolscm.locale`.
+- **What is stored in the browser**: the chosen language (`toolscm.locale`),
+  and — once a database is configured — a random device id (`toolscm.device`)
+  used only to count free operations. Neither contains anything about you.
 
 ---
 
@@ -132,8 +134,13 @@ src/
     tools/catalog/        the tool registry (pure data: metadata, SEO copy, FAQ)
     tools/                pdf-utils, canvas, segmentation helpers
     i18n/                 locale store + dictionaries
+    supabase/             config, browser / server / service-role clients
+    usage/                device id, server-side counting, the useUsage hook
+    entitlement.ts        "is this caller Pro?", answered from the database
   locales/                fr.json, en.json
   types/tool.ts           the tool contract
+  proxy.ts                refreshes the session cookie (Next 16's middleware)
+supabase/migrations/      the schema, RLS policies and grants
 ```
 
 **Adding a tool** is three steps: add a `ToolDefinition` to the right catalog
@@ -198,21 +205,55 @@ launch** — everything else has been exercised against real files.
 
 ---
 
-## Not built yet (Phase 3 and 4)
+## The business layer (Phase 3, partly built)
 
-Deliberately absent, so that nothing claims to work when it does not:
+**Built and working:** the Supabase schema with row level security, accounts
+(email/password and Google), the server-enforced daily limit, the paywall, and
+the admin dashboard at `/admin`.
 
-- Accounts and Supabase (schema, RLS, profiles, subscriptions, payments,
-  usage logs, admin settings)
-- The 3-a-day free limit, and the paywall modal
-- NotchPay and Stripe behind a provider abstraction, with signature-verified,
-  idempotent webhooks
-- The admin dashboard at `/admin`
-- Blog, analytics events, AdSense
+**Off by default, on purpose.** With no Supabase keys the site behaves exactly
+as it does without a database: every tool free, no limits, no accounts. Adding
+keys switches the layer on — and even then the daily limit stays off until you
+set `limits_enabled` in `/admin`. Nothing starts turning people away by
+accident.
 
-The pricing page says all of this in plain language today: payments are not
-live, and the daily limit is not enforced yet. `.env.example` already lists
-every variable these will need, and `AdSlot` renders nothing at all until
+### Setting it up
+
+1. Create a Supabase project (free tier is enough).
+2. Run `supabase/migrations/0001_init.sql` in the SQL editor.
+3. Copy `.env.example` to `.env.local` and fill in the three Supabase values
+   plus a random `USAGE_HASH_SALT`.
+4. `npm run test:supabase` — proves the limit really limits and that the
+   browser cannot read or write the tables that decide it. It skips cleanly
+   when no keys are present.
+5. To make yourself an admin:
+   `update public.profiles set is_admin = true where email = 'you@example.com';`
+
+### How the limit is enforced
+
+The browser never decides anything. Before a tool runs it calls `/api/usage`,
+which reads the session cookie, asks the database, and answers. There is no
+`isPro` flag in any request for anyone to edit in dev tools.
+
+Two counters run, for different reasons. A random device id in local storage
+carries the real limit. A **salted hash** of IP and user agent carries a much
+looser ceiling as anti-abuse — deliberately loose, because mobile networks in
+Cameroon share IP addresses between very many people and a tight per-network
+limit would turn away innocent users. Raw IP addresses are never stored.
+
+Clearing local storage resets the device counter, and we know it. The free
+limit is a speed bump, not a wall, and the product is not designed to depend on
+it being unbeatable.
+
+## Still not built
+
+- NotchPay and Stripe behind a provider abstraction, with signature-verified
+  webhooks (the database side of idempotency is built and tested — a repeated
+  payment notification cannot create two subscriptions)
+- Blog, analytics reporting, AdSense
+
+The pricing page says so in plain language: payments are not live, and the
+daily limit is not enforced yet. `AdSlot` renders nothing at all until
 `NEXT_PUBLIC_ADSENSE_CLIENT` is set — no empty placeholder boxes.
 
 ---

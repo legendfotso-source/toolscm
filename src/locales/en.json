@@ -202,7 +202,9 @@
   "usage": {
     "remaining": "{count} free operation(s) left today",
     "remainingOne": "Last free operation today",
-    "resetNote": "Your limit resets at midnight."
+    "resetNote": "Your limit resets at midnight.",
+    "today": "Today",
+    "unlimited": "Unlimited use"
   },
   "contact": {
     "title": "Contact",
@@ -247,5 +249,32 @@
     "copied": "Copied",
     "generate": "Generate",
     "download": "Download"
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signUp": "Create an account",
+    "signOut": "Sign out",
+    "email": "Email address",
+    "password": "Password",
+    "signInTitle": "Sign in to your account",
+    "signUpTitle": "Create a Tools.cm account",
+    "signInSubtitle": "An account is only needed to manage a Pro subscription. Every tool stays usable without one.",
+    "noAccount": "No account yet?",
+    "hasAccount": "Already have an account?",
+    "continueGoogle": "Continue with Google",
+    "or": "or",
+    "checkEmail": "Check your inbox — we have sent you a confirmation link.",
+    "invalidCredentials": "Wrong email or password.",
+    "weakPassword": "Choose a password of at least 8 characters.",
+    "emailTaken": "An account already exists with that address.",
+    "unexpected": "Sign-in failed. Try again in a moment.",
+    "account": "My account",
+    "accountTitle": "My account",
+    "plan": "Plan",
+    "planFree": "Free",
+    "planPro": "Pro",
+    "proUntil": "Active until {date}",
+    "notConfigured": "Accounts are not enabled on this deployment yet.",
+    "working": "One moment..."
   }
 }

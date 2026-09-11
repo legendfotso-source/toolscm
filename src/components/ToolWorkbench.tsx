@@ -11,7 +11,10 @@ import type {
   ToolDefinition,
   ToolResult,
 } from "@/types/tool";
+import { useUsage } from "@/lib/usage/useUsage";
 import { UploadZone } from "./UploadZone";
+import { PaywallModal } from "./PaywallModal";
+import { UsageCounter } from "./UsageCounter";
 import { FileList } from "./FileList";
 import { ProcessingState } from "./ProcessingState";
 import { ResultCard } from "./ResultCard";
@@ -60,6 +63,8 @@ export function ToolWorkbench({
   const [error, setError] = useState<ToolError | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
+  const usage = useUsage();
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   // A preview of the input, so image results can be shown side by side.
   const originalPreview = useImageObjectUrl(files[0]);
@@ -134,6 +139,16 @@ export function ToolWorkbench({
       return;
     }
 
+    // Ask the server for permission before any work starts. The answer comes
+    // from the session cookie and the database, never from this page — there
+    // is no "isPro" flag here for anyone to edit in dev tools.
+    const permission = await usage.claim(tool.id);
+    if (!permission.allowed) {
+      setPaywallOpen(true);
+      setPhase("ready");
+      return;
+    }
+
     const controller = new AbortController();
     abortRef.current = controller;
     setProgress({ phase: "indeterminate" });
@@ -171,18 +186,33 @@ export function ToolWorkbench({
     : t(files.length > 1 ? "common.processMulti" : "common.process");
   const optionsToShow = useMemo(() => options, [options]);
 
+  const paywall = (
+    <PaywallModal open={paywallOpen} onClose={() => setPaywallOpen(false)} />
+  );
+
   if (phase === "running") {
-    return <ProcessingState progress={progress} onCancel={cancel} />;
+    return (
+      <>
+        <ProcessingState progress={progress} onCancel={cancel} />
+        {paywall}
+      </>
+    );
   }
 
   if (phase === "done" && result) {
     return (
-      <ResultCard
-        result={result}
-        onReset={reset}
-        originalPreview={originalPreview}
-        transparentPreview={transparentPreview}
-      />
+      <>
+        <ResultCard
+          result={result}
+          onReset={reset}
+          originalPreview={originalPreview}
+          transparentPreview={transparentPreview}
+        />
+        <div className="mt-4">
+          <UsageCounter remaining={usage.remaining} isPro={usage.isPro} />
+        </div>
+        {paywall}
+      </>
     );
   }
 
@@ -228,8 +258,12 @@ export function ToolWorkbench({
           <Button size="lg" className="w-full" data-testid="run" onClick={start}>
             {action}
           </Button>
+
+          <UsageCounter remaining={usage.remaining} isPro={usage.isPro} />
         </>
       ) : null}
+
+      {paywall}
     </div>
   );
 }
