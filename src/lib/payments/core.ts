@@ -25,7 +25,7 @@ export { TERM_DAYS, nextEndDate };
  *      rather than as an error.
  */
 
-export type Provider = "notchpay" | "stripe" | "manual";
+export type Provider = "notchpay" | "campay" | "stripe" | "manual";
 
 /** Postgres unique-violation. The whole idempotency guarantee rests on it. */
 const UNIQUE_VIOLATION = "23505";
@@ -209,6 +209,36 @@ export async function createPendingPayment(input: {
   });
 
   if (error) throw new Error(`could not reserve the payment: ${error.message}`);
+}
+
+/**
+ * Remember the provider's own identifier for a payment we already reserved.
+ *
+ * CamPay's status endpoint takes THEIR reference, not ours, and we only learn
+ * it after the payment link is created. Without this the return page would
+ * have no way to ask whether the customer actually paid.
+ */
+export async function attachProviderRef(
+  provider: Provider,
+  reference: string,
+  providerRef: string,
+): Promise<void> {
+  const client = requireAdminClient();
+
+  const existing = await client
+    .from("payments")
+    .select("raw")
+    .eq("provider", provider)
+    .eq("transaction_id", reference)
+    .maybeSingle();
+
+  const raw = (existing.data as { raw: Record<string, unknown> | null } | null)?.raw ?? {};
+
+  await client
+    .from("payments")
+    .update({ raw: { ...raw, providerRef } })
+    .eq("provider", provider)
+    .eq("transaction_id", reference);
 }
 
 export type SettleResult =

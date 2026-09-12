@@ -338,8 +338,8 @@ already in place.
 
 ### Payment providers
 
-NotchPay and Stripe are integrated and **not yet exercised against a live
-account** — that is the one remaining unknown, and it is stated here rather
+CamPay, NotchPay and Stripe are integrated and **not yet exercised against a
+live account** — that is the one remaining unknown, and it is stated here rather
 than discovered later. Both are inert without keys and gated a second time by
 `payments_enabled` in `/admin`, so nothing switches on by accident.
 
@@ -360,6 +360,19 @@ succeeded:
 Idempotency is a conditional update on `status = 'pending'`. Two webhooks
 racing, or a webhook racing the customer's return, both attempt it; exactly one
 matches a row and the other stops.
+
+**CamPay is the exception, deliberately.** CamPay publishes no webhook signing
+scheme, so that handler verifies nothing it receives. The notification is
+treated as a nudge meaning "go and look"; the answer comes from an
+authenticated call to CamPay's own status endpoint, and only `SUCCESSFUL`
+there grants anything. A forged POST achieves nothing more than making this
+server ask CamPay a question. That costs one extra HTTP request and avoids
+guessing at cryptography — a signature check that is subtly wrong feels safe
+while protecting nothing.
+
+Its environment defaults to the **sandbox**, so a mistyped variable tests a
+payment rather than taking someone's real money. `CAMPAY_ENVIRONMENT=PROD` is
+the deliberate act.
 
 Thirteen checks in `npm run test:payments` cover the signature verification,
 including the two mistakes that would matter most: signing Stripe's body
@@ -412,11 +425,12 @@ it being unbeatable.
 Written, reviewed and unit-tested, but never exercised against the real thing.
 This is the honest list, not a disclaimer:
 
-- **No payment has been taken through NotchPay or Stripe.** The signature
-  verification, idempotency and settlement logic are tested; the HTTP calls to
-  the providers are written from their published APIs and have never received
-  a real response. Take one test payment before switching `payments_enabled`
-  on. The Mobile Money flow taken by hand *is* proven end to end, because it
+- **No payment has been taken through CamPay, NotchPay or Stripe.** The
+  signature verification, idempotency and settlement logic are tested; the HTTP
+  calls to the providers are written from their published APIs and SDKs and
+  have never received a real response. Take one test payment before switching
+  `payments_enabled` on — CamPay has a sandbox, which is the cheapest place to
+  start. The Mobile Money flow taken by hand *is* proven end to end, because it
   involves no API at all.
 - **The two background-removal tools were never run.** The build sandbox
   cannot reach `staticimgly.com`, where the ~40 MB model lives. Every other

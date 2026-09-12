@@ -31,8 +31,16 @@ exception when duplicate_object then null;
 end $$;
 
 do $$ begin
-  create type public.payment_provider as enum ('notchpay', 'stripe', 'manual');
+  create type public.payment_provider as enum ('notchpay', 'campay', 'stripe', 'manual');
 exception when duplicate_object then null;
+end $$;
+
+-- Adding a provider later must not need the type dropped and recreated, which
+-- would mean dropping every column that uses it. `add value if not exists` is
+-- safe to re-run and is how a new provider joins an existing database.
+do $$ begin
+  alter type public.payment_provider add value if not exists 'campay';
+exception when others then null;
 end $$;
 
 create table if not exists public.subscriptions (

@@ -3,6 +3,7 @@ import { PricingContent } from "@/components/PricingContent";
 import { getSettings } from "@/lib/settings";
 import { plans } from "@/lib/payments/plans";
 import { notchpayConfigured } from "@/lib/payments/providers/notchpay";
+import { campayConfigured } from "@/lib/payments/providers/campay";
 import { stripeConfigured } from "@/lib/payments/providers/stripe";
 import { currentUser } from "@/lib/supabase/server-client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -30,6 +31,7 @@ export default async function PricingPage() {
   return (
     <PricingContent
       notchpay={live && notchpayConfigured()}
+      campay={live && campayConfigured()}
       stripe={live && stripeConfigured()}
       signedIn={Boolean(user)}
       plansAvailable={plans(settings.price_xaf)}

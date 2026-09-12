@@ -29,7 +29,7 @@ export function PaymentReturn({
   provider,
   reference,
 }: {
-  provider: "notchpay" | "stripe" | null;
+  provider: "notchpay" | "campay" | "stripe" | null;
   reference: string | null;
 }) {
   const { locale } = useLocale();

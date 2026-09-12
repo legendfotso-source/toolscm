@@ -5,11 +5,12 @@ import { settlePayment } from "@/lib/payments/core";
 import { receiptReference } from "@/lib/payments/receipt";
 import { requireAdminClient } from "@/lib/supabase/admin";
 import { verifyPayment } from "@/lib/payments/providers/notchpay";
+import { verifyPayment as verifyCampayPayment } from "@/lib/payments/providers/campay";
 
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  provider: z.enum(["notchpay", "stripe"]),
+  provider: z.enum(["notchpay", "campay", "stripe"]),
   reference: z.string().trim().min(6).max(120),
 });
 
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
     amount: number;
     currency: string;
     created_at: string;
-    raw: { days?: number } | null;
+    raw: { days?: number; providerRef?: string } | null;
   } | null;
 
   // Unknown, or somebody else's. Same answer either way: a probing customer
@@ -101,6 +102,34 @@ export async function POST(request: Request) {
   // handled by its webhook; only NotchPay is polled here, because its
   // Mobile Money confirmations can take a minute and the customer is watching
   // the screen the whole time.
+  if (provider === "campay") {
+    // CamPay's status endpoint takes THEIR reference, stored when the payment
+    // link was created. Without it there is nothing to ask about.
+    const providerRef = row.raw?.providerRef;
+    if (!providerRef) return NextResponse.json({ status: "pending" });
+
+    const verified = await verifyCampayPayment(providerRef);
+    if (!verified.paid) {
+      return NextResponse.json({ status: "pending", providerStatus: verified.status });
+    }
+
+    const result = await settlePayment({
+      provider,
+      reference,
+      amount: verified.amount,
+      currency: verified.currency,
+      raw: { verifiedOnReturn: true, providerRef },
+    });
+
+    if (result.outcome === "granted") {
+      return NextResponse.json({
+        status: "paid",
+        receipt: receiptFor(result.paidAt, result.proUntil, result.days),
+      });
+    }
+    return NextResponse.json({ status: "paid", receipt: null });
+  }
+
   if (provider === "notchpay") {
     const verified = await verifyPayment(reference);
     if (!verified.paid) {

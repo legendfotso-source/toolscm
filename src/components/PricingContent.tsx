@@ -56,11 +56,13 @@ const PRICING_FAQ: ToolFaqEntry[] = [
 
 export function PricingContent({
   notchpay = false,
+  campay = false,
   stripe = false,
   signedIn = false,
   plansAvailable = [],
 }: {
   notchpay?: boolean;
+  campay?: boolean;
   stripe?: boolean;
   signedIn?: boolean;
   plansAvailable?: Plan[];
@@ -70,7 +72,7 @@ export function PricingContent({
   const manualPayment = isManualPaymentAvailable();
   // "Payable" means there is a real way to hand over money today — through a
   // provider, or by Mobile Money and a human. Not "a provider exists".
-  const payable = notchpay || stripe || manualPayment;
+  const payable = notchpay || campay || stripe || manualPayment;
 
   return (
     <div className="container-page py-6 sm:py-8">
@@ -79,13 +81,14 @@ export function PricingContent({
 
         <SectionHeading title={t("pricing.title")} description={t("pricing.subtitle")} align="center" />
 
-        {notchpay || stripe ? (
+        {notchpay || campay || stripe ? (
           // A payment provider is live: the customer can pay without anyone
           // being involved.
           <Card className="mx-auto mb-8 max-w-2xl p-5">
             <CheckoutButtons
               plansAvailable={plansAvailable}
               notchpay={notchpay}
+              campay={campay}
               stripe={stripe}
               signedIn={signedIn}
             />

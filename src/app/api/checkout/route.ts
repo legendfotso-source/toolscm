@@ -4,15 +4,16 @@ import { z } from "zod";
 import { currentUser } from "@/lib/supabase/server-client";
 import { getSettings } from "@/lib/settings";
 import { getPlan } from "@/lib/payments/plans";
-import { createPendingPayment } from "@/lib/payments/core";
+import { attachProviderRef, createPendingPayment } from "@/lib/payments/core";
 import { initialisePayment, notchpayConfigured } from "@/lib/payments/providers/notchpay";
+import { campayConfigured, createPaymentLink } from "@/lib/payments/providers/campay";
 import { createCheckoutSession, stripeConfigured } from "@/lib/payments/providers/stripe";
 import { SITE_URL } from "@/lib/site";
 
 export const dynamic = "force-dynamic";
 
 const Body = z.object({
-  provider: z.enum(["notchpay", "stripe"]),
+  provider: z.enum(["notchpay", "campay", "stripe"]),
   plan: z.enum(["monthly", "quarterly", "yearly"]).default("monthly"),
 });
 
@@ -57,6 +58,9 @@ export async function POST(request: Request) {
   if (provider === "notchpay" && !notchpayConfigured()) {
     return NextResponse.json({ error: "provider_unavailable" }, { status: 409 });
   }
+  if (provider === "campay" && !campayConfigured()) {
+    return NextResponse.json({ error: "provider_unavailable" }, { status: 409 });
+  }
   if (provider === "stripe" && !stripeConfigured()) {
     return NextResponse.json({ error: "provider_unavailable" }, { status: 409 });
   }
@@ -85,6 +89,23 @@ export async function POST(request: Request) {
     });
 
     const returnUrl = `${SITE_URL}/payment/return?provider=${provider}&reference=${encodeURIComponent(reference)}`;
+
+    if (provider === "campay") {
+      const link = await createPaymentLink({
+        amount,
+        currency,
+        description: `Tools.cm Pro — ${plan.days} jours`,
+        externalReference: reference,
+        email: user.email,
+        redirectUrl: returnUrl,
+        failureRedirectUrl: `${SITE_URL}/pricing?cancelled=1`,
+      });
+
+      // CamPay's status endpoint takes THEIR reference, which only exists
+      // once the link has been created. Store it before the customer leaves.
+      await attachProviderRef("campay", reference, link.providerReference);
+      return NextResponse.json({ url: link.url });
+    }
 
     if (provider === "notchpay") {
       const result = await initialisePayment({

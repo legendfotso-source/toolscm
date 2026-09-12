@@ -23,7 +23,11 @@ export default async function PaymentReturnPage({
 
   return (
     <PaymentReturn
-      provider={provider === "stripe" ? "stripe" : provider === "notchpay" ? "notchpay" : null}
+      provider={
+        provider === "stripe" || provider === "notchpay" || provider === "campay"
+          ? provider
+          : null
+      }
       reference={reference ?? null}
     />
   );

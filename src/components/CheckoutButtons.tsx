@@ -17,11 +17,13 @@ import { Button, Notice } from "./ui";
 export function CheckoutButtons({
   plansAvailable,
   notchpay,
+  campay,
   stripe,
   signedIn,
 }: {
   plansAvailable: Plan[];
   notchpay: boolean;
+  campay: boolean;
   stripe: boolean;
   signedIn: boolean;
 }) {
@@ -35,7 +37,7 @@ export function CheckoutButtons({
 
   const selected = plansAvailable.find((plan) => plan.id === planId) ?? plansAvailable[0];
 
-  const start = async (provider: "notchpay" | "stripe") => {
+  const start = async (provider: "notchpay" | "campay" | "stripe") => {
     setBusy(provider);
     setError(null);
     try {
@@ -137,7 +139,25 @@ export function CheckoutButtons({
       ) : null}
 
       <div className="mt-4 space-y-2.5">
-        {notchpay ? (
+        {/* Only one Mobile Money button is ever shown. Two buttons that do the
+            same thing through different companies is a choice the customer has
+            no way to make, and every extra decision loses people at checkout. */}
+        {campay ? (
+          <Button
+            size="lg"
+            className="w-full"
+            onClick={() => start("campay")}
+            disabled={busy !== null}
+          >
+            {busy === "campay"
+              ? fr
+                ? "Ouverture..."
+                : "Opening..."
+              : fr
+                ? "Payer avec MTN ou Orange Money"
+                : "Pay with MTN or Orange Money"}
+          </Button>
+        ) : notchpay ? (
           <Button
             size="lg"
             className="w-full"
