@@ -29,12 +29,12 @@ const root = join(here, "..");
  * site.ts reads process.env at module load, so each case needs a fresh module.
  * Compiled once; imported many times with a changing cache-busting query.
  */
-function compile() {
+function compile(relative = join("src", "lib", "site.ts"), name = "site.js") {
   const out = mkdtempSync(join(tmpdir(), "toolscm-config-"));
   execFileSync(
     join(root, "node_modules", ".bin", "tsc"),
     [
-      join(root, "src", "lib", "site.ts"),
+      join(root, relative),
       "--outDir",
       out,
       "--module",
@@ -48,7 +48,7 @@ function compile() {
     { stdio: "pipe" },
   );
   writeFileSync(join(out, "package.json"), JSON.stringify({ type: "module" }));
-  return join(out, "site.js");
+  return join(out, name);
 }
 
 const compiled = compile();
@@ -189,6 +189,64 @@ await check("a WhatsApp number written with spaces and + still works", async () 
   const site = await loadWith({ NEXT_PUBLIC_SUPPORT_WHATSAPP: "+237 652 11 64 11" });
   assert.equal(site.SUPPORT_WHATSAPP, "237652116411");
   return "punctuation stripped for the wa.me link";
+});
+
+/* ---------------- the promise the visitor counting makes ---------------- */
+
+/**
+ * These four checks are the whole reason page_views is allowed to exist.
+ *
+ * The privacy policy tells visitors, in plain French, that we can count how
+ * many people came today but cannot tell who came back yesterday. That is a
+ * claim about a hash function, and a claim about a hash function is either
+ * tested or it is decoration.
+ */
+const hash = await import(compile(join("src", "lib", "usage", "hash.ts"), "hash.js"));
+
+const IP = "102.244.17.9";
+const AGENT = "Mozilla/5.0 (Linux; Android 10; TECNO KE5)";
+
+await check("the same visitor on the same day counts as one person", async () => {
+  const a = hash.dailyFingerprint("salt", "2026-09-12", IP, AGENT);
+  const b = hash.dailyFingerprint("salt", "2026-09-12", IP, AGENT);
+  assert.equal(a, b);
+  return "repeat visits increment a row rather than inventing a visitor";
+});
+
+await check("the same visitor TOMORROW is a different, unlinkable value", async () => {
+  // This is the property the privacy policy describes. If it ever stopped
+  // holding, the site would quietly be keeping browsing histories.
+  const today = hash.dailyFingerprint("salt", "2026-09-12", IP, AGENT);
+  const tomorrow = hash.dailyFingerprint("salt", "2026-09-13", IP, AGENT);
+  assert.notEqual(today, tomorrow, "the day is not part of the hash");
+  return "no history can be assembled across days";
+});
+
+await check("the fingerprint gives away nothing about the address", async () => {
+  const digest = hash.dailyFingerprint("salt", "2026-09-12", IP, AGENT);
+  assert.ok(!digest.includes(IP), "the raw IP is in the output");
+  assert.ok(!digest.includes("102"), "part of the raw IP is in the output");
+  assert.ok(!digest.includes("Android"), "part of the user agent is in the output");
+  assert.match(digest, /^[A-Za-z0-9_-]{32}$/, `unexpected shape: ${digest}`);
+  return "an opaque 32-character digest";
+});
+
+await check("rotating the salt invalidates every stored fingerprint", async () => {
+  const before = hash.dailyFingerprint("salt", "2026-09-12", IP, AGENT);
+  const after = hash.dailyFingerprint("a new salt", "2026-09-12", IP, AGENT);
+  assert.notEqual(before, after);
+  return "changing USAGE_HASH_SALT really does start again from nothing";
+});
+
+await check("the anti-abuse fingerprint is stable, unlike the visitor one", async () => {
+  // The two must not be confused: the daily allowance would reset at midnight
+  // UTC for everyone if the ceiling used the forgetful hash, and the audience
+  // figures would become a browsing history if it used the stable one.
+  const monday = hash.stableFingerprint("salt", IP, AGENT);
+  const tuesday = hash.stableFingerprint("salt", IP, AGENT);
+  assert.equal(monday, tuesday);
+  assert.notEqual(monday, hash.dailyFingerprint("salt", "2026-09-12", IP, AGENT));
+  return "two fingerprints, two different jobs";
 });
 
 /* ---------------- metadata that must not repeat itself ---------------- */

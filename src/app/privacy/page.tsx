@@ -63,11 +63,28 @@ const document: LegalDocument = {
       body: {
         fr: [
           "Une seule chose : la langue que vous avez choisie, enregistrée dans le stockage local de votre navigateur sous la clé « toolscm.locale ». Elle ne nous est pas transmise et sert uniquement à afficher le site dans la bonne langue à votre prochaine visite.",
-          "Nous n'utilisons aujourd'hui aucun cookie de suivi, aucun identifiant publicitaire et aucun outil de mesure d'audience tiers.",
+          "Nous n'utilisons aujourd'hui aucun cookie de suivi, aucun identifiant publicitaire et aucun outil de mesure d'audience tiers. Nous comptons nous-mêmes les visites, sans cookie : la section suivante explique exactement comment.",
         ],
         en: [
           "One thing only: the language you chose, saved in your browser's local storage under the key \"toolscm.locale\". It is not sent to us and only serves to show the site in the right language on your next visit.",
-          "We currently use no tracking cookie, no advertising identifier and no third-party analytics tool.",
+          "We currently use no tracking cookie, no advertising identifier and no third-party analytics tool. We count visits ourselves, without a cookie: the next section explains exactly how.",
+        ],
+      },
+    },
+    {
+      heading: { fr: "Ce que nous comptons", en: "What we count" },
+      body: {
+        fr: [
+          "Nous avons besoin de savoir si quelqu'un vient sur le site et quelles pages sont utiles. Nous enregistrons donc, pour chaque page ouverte : le chemin de la page (jamais l'adresse complète, jamais ce qui suit un « ? »), le pays sur deux lettres, « téléphone » ou « ordinateur », et le nom du site qui vous a amené ici — par exemple google.com ou web.whatsapp.com, jamais l'adresse complète, qui pourrait contenir ce que vous avez tapé dans une recherche.",
+          "Ce compte est rattaché à un identifiant calculé à partir de votre adresse IP et de votre navigateur, mélangés à un secret et à la date du jour, puis transformé en une empreinte irréversible. Votre adresse IP n'est jamais enregistrée. Comme la date entre dans le calcul, la même personne obtient une empreinte totalement différente le lendemain : nous pouvons savoir combien de personnes sont venues aujourd'hui, jamais qui est déjà venu hier.",
+          "C'est une limite volontaire. Elle nous empêche de constituer un historique de navigation, y compris pour nous-mêmes, et y compris si la base de données tombait entre d'autres mains.",
+          "Nous comptons aussi, de la même manière anonyme, quels outils sont lancés, s'ils réussissent ou échouent, et combien de temps ils prennent. Aucun nom de fichier et aucun contenu de fichier n'est transmis : le formulaire technique qui reçoit ces mesures n'a même pas de champ où en mettre un.",
+        ],
+        en: [
+          "We need to know whether anybody is coming to the site and which pages are useful. So for each page opened we record: the page path (never the full address, never anything after a \"?\"), a two-letter country, \"phone\" or \"computer\", and the name of the site that sent you here — google.com or web.whatsapp.com, for instance, never the full address, which could contain what you typed into a search.",
+          "That count is attached to an identifier computed from your IP address and your browser, mixed with a secret and with today's date, then turned into a one-way fingerprint. Your IP address is never stored. Because the date goes into the calculation, the same person produces a completely different fingerprint tomorrow: we can know how many people came today, never who was already here yesterday.",
+          "This is a deliberate limit. It stops a browsing history from being assembled — by us, and by anyone else who ever obtained the database.",
+          "In the same anonymous way we count which tools are run, whether they succeed or fail, and how long they take. No filename and no file content is sent: the technical form that receives these measurements has no field one could be put in.",
         ],
       },
     },

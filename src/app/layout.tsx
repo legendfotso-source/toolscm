@@ -5,6 +5,7 @@ import { LocaleProvider } from "@/lib/i18n/LocaleProvider";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { ServiceWorker } from "@/components/ServiceWorker";
+import { PageViews } from "@/components/PageViews";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 
 export const metadata: Metadata = {
@@ -70,6 +71,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </main>
           <Footer />
           <ServiceWorker />
+          <PageViews />
         </LocaleProvider>
       </body>
     </html>

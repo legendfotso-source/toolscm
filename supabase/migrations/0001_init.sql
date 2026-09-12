@@ -150,6 +150,56 @@ comment on table public.tool_events is
   'Counts of what happened, never what was in the file. No filenames, no contents.';
 
 -- ---------------------------------------------------------------------------
+-- page_views — how many people came, never which people
+--
+-- The admin needs to know whether anybody is arriving and which pages they
+-- land on. That is a legitimate question and it can be answered honestly,
+-- because answering it does not require knowing who anyone is.
+--
+-- `visitor` is a salted hash that includes TODAY'S DATE. The same person
+-- visiting tomorrow hashes to something completely different, so "visitors
+-- today" is countable while "what did this person do last week" is not a
+-- question this table can answer — not by us, not by anyone who obtains it.
+-- That is a deliberate limit, not an oversight: a site that promises files
+-- never leave the device should not quietly build a profile of the person
+-- holding the device.
+--
+-- One row per (day, path, visitor) with a counter, rather than one row per
+-- view. It keeps the table small, and it means the raw data is already the
+-- aggregate — there is no detailed history sitting underneath waiting to be
+-- mined.
+-- ---------------------------------------------------------------------------
+create table if not exists public.page_views (
+  id         bigint generated always as identity primary key,
+  day        date not null default (now() at time zone 'utc')::date,
+  -- A path from our own site, never a full URL and never a query string:
+  -- query strings are where personal data ends up by accident.
+  path       text not null,
+  visitor    text not null,
+  -- Two-letter country from the hosting layer. Coarse on purpose.
+  country    text,
+  -- 'mobile' or 'desktop'. The whole product is built for cheap Android
+  -- phones, so knowing the split is the difference between guessing and
+  -- knowing.
+  device     text,
+  -- The HOST that linked here (google.com, web.whatsapp.com), never the full
+  -- referring URL, which can carry someone's search terms.
+  referrer   text,
+  views      integer not null default 1 check (views >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists page_views_day_path_visitor_idx
+  on public.page_views (day, path, visitor);
+create index if not exists page_views_day_idx on public.page_views (day desc);
+
+comment on table public.page_views is
+  'Visit counts. The visitor hash is re-salted daily and cannot be linked across days.';
+comment on column public.page_views.visitor is
+  'sha256(salt | date | ip | user agent), truncated. Not reversible, and different tomorrow.';
+
+-- ---------------------------------------------------------------------------
 -- admin_settings — values the admin can change without a deployment
 -- ---------------------------------------------------------------------------
 create table if not exists public.admin_settings (
@@ -186,6 +236,7 @@ alter table public.subscriptions  enable row level security;
 alter table public.payments       enable row level security;
 alter table public.usage_logs     enable row level security;
 alter table public.tool_events    enable row level security;
+alter table public.page_views     enable row level security;
 alter table public.admin_settings enable row level security;
 
 -- profiles: a user sees and edits only their own row.
@@ -337,6 +388,37 @@ as $$
      and day = (now() at time zone 'utc')::date;
 $$;
 
+-- Count one visit.
+--
+-- The upsert is what makes this cheap: a person reading eight tool pages adds
+-- eight rows on their first day and then only increments them, however many
+-- times they come back that day.
+--
+-- The country, device and referrer are written once, when the row is created,
+-- and never overwritten. A second visit from the same person on the same day
+-- is the same visit for our purposes, and re-writing those columns would turn
+-- a counter into a "where were they last seen" log, which is exactly what this
+-- table is designed not to be.
+create or replace function public.record_page_view(
+  p_path     text,
+  p_visitor  text,
+  p_country  text default null,
+  p_device   text default null,
+  p_referrer text default null
+)
+returns void
+language sql
+volatile
+security definer
+set search_path = public
+as $$
+  insert into public.page_views (path, visitor, country, device, referrer)
+  values (p_path, p_visitor, p_country, p_device, p_referrer)
+  on conflict (day, path, visitor) do update
+    set views      = public.page_views.views + 1,
+        updated_at = now();
+$$;
+
 -- ---------------------------------------------------------------------------
 -- These functions must only ever run from server code holding the secret key.
 --
@@ -378,6 +460,10 @@ grant execute on function
 grant execute on function public.expire_subscriptions()        to service_role;
 grant execute on function public.has_active_subscription(uuid) to service_role;
 
+grant execute on function
+  public.record_page_view(text, text, text, text, text)
+  to service_role;
+
 -- handle_new_user runs from a trigger on auth.users. PostgreSQL checks EXECUTE
 -- when a trigger is created rather than when it fires, so this is
 -- belt-and-braces — but signup breaking is not worth risking to save a line.
@@ -393,10 +479,10 @@ grant execute on function public.handle_new_user()
 -- complete list of what a browser can even attempt, before row level security
 -- then decides which rows it may see.
 --
--- usage_logs, tool_events and admin_settings appear nowhere below. They are
--- unreachable from the browser by privilege, not merely by policy: two
--- independent locks on the tables that decide who has paid and who has used
--- their allowance.
+-- usage_logs, tool_events, page_views and admin_settings appear nowhere below.
+-- They are unreachable from the browser by privilege, not merely by policy:
+-- two independent locks on the tables that decide who has paid, who has used
+-- their allowance, and how many people came.
 -- ===========================================================================
 
 grant usage on schema public to anon, authenticated;

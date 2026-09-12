@@ -29,13 +29,17 @@ do $$
 declare
   leaky text;
 begin
+  -- Every security definer function in the schema, not a list written by
+  -- hand. A hand-written list is only correct until somebody adds a function
+  -- and forgets to add it here, which is exactly how the original hole would
+  -- have come back: record_page_view was added later and this check caught it
+  -- for free.
   select string_agg(p.proname, ', ')
     into leaky
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
-     and p.proname in ('consume_operation', 'peek_usage', 'expire_subscriptions',
-                       'has_active_subscription', 'handle_new_user')
+     and p.prosecdef
      and (has_function_privilege('anon', p.oid, 'EXECUTE')
        or has_function_privilege('authenticated', p.oid, 'EXECUTE'));
 
@@ -54,8 +58,7 @@ begin
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
-     and p.proname in ('consume_operation', 'peek_usage', 'expire_subscriptions',
-                       'has_active_subscription')
+     and p.prosecdef
      and not has_function_privilege('service_role', p.oid, 'EXECUTE');
 
   perform test_assert(missing is null, 'the server can still call every function it needs');
@@ -313,4 +316,89 @@ begin
 
   select public.expire_subscriptions() into expired;
   perform test_assert(expired >= 1, 'expire_subscriptions marks lapsed rows');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Counting visitors without being able to follow one
+--
+-- The privacy policy promises two things about this table, and both are
+-- structural rather than a matter of good intentions:
+--   1. a repeat visit increments a counter instead of adding a row, so the
+--      table never becomes a timeline;
+--   2. nothing in the browser can read it, by privilege and not merely by
+--      policy.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  rows_after integer;
+  views_after integer;
+  distinct_visitors integer;
+begin
+  perform public.record_page_view('/pricing', 'visitor-a', 'CM', 'mobile', 'web.whatsapp.com');
+  perform public.record_page_view('/pricing', 'visitor-a', 'CM', 'mobile', 'web.whatsapp.com');
+  perform public.record_page_view('/pricing', 'visitor-a', 'CM', 'mobile', 'web.whatsapp.com');
+
+  select count(*), sum(views) into rows_after, views_after
+    from public.page_views
+   where path = '/pricing' and visitor = 'visitor-a';
+
+  perform test_assert(
+    rows_after = 1,
+    'three visits to one page by one visitor stay a single row'
+  );
+  perform test_assert(
+    views_after = 3,
+    'the counter actually counts rather than silently ignoring repeats'
+  );
+end $$;
+
+do $$
+declare
+  visitors integer;
+  paths integer;
+begin
+  perform public.record_page_view('/pricing', 'visitor-b', 'FR', 'desktop', null);
+  perform public.record_page_view('/tool/compress-pdf', 'visitor-a', 'CM', 'mobile', null);
+
+  select count(distinct visitor) into visitors from public.page_views;
+  select count(*) into paths from public.page_views where visitor = 'visitor-a';
+
+  perform test_assert(visitors = 2, 'two different visitors are two different people');
+  perform test_assert(paths = 2, 'one visitor reading two pages is two rows, one per page');
+end $$;
+
+-- The country, device and referrer describe the first visit and are never
+-- rewritten. Overwriting them on every return would turn a counter into a
+-- "where were they last seen" log, which is precisely what this table exists
+-- not to be.
+do $$
+declare
+  seen_country text;
+  seen_referrer text;
+begin
+  perform public.record_page_view('/pricing', 'visitor-a', 'US', 'desktop', 'google.com');
+
+  select country, referrer into seen_country, seen_referrer
+    from public.page_views
+   where path = '/pricing' and visitor = 'visitor-a';
+
+  perform test_assert(
+    seen_country = 'CM' and seen_referrer = 'web.whatsapp.com',
+    'a later visit does not rewrite where the first one came from'
+  );
+end $$;
+
+-- Unreachable from the browser, like usage_logs and tool_events before it.
+do $$
+begin
+  perform test_assert(
+    not has_table_privilege('anon', 'public.page_views', 'SELECT')
+      and not has_table_privilege('authenticated', 'public.page_views', 'SELECT'),
+    'nobody signed in or anonymous can read the visit counts'
+  );
+  perform test_assert(
+    not has_table_privilege('anon', 'public.page_views', 'INSERT')
+      and not has_table_privilege('authenticated', 'public.page_views', 'INSERT'),
+    'and nobody in a browser can write to them either'
+  );
 end $$;

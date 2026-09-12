@@ -1,9 +1,9 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
 import { adminClient } from "@/lib/supabase/admin";
 import { getSettings } from "@/lib/settings";
 import { usageHashSalt } from "@/lib/supabase/config";
+import { dailyFingerprint, stableFingerprint, utcDay } from "./hash";
 
 export type UsageVerdict = {
   allowed: boolean;
@@ -30,14 +30,41 @@ const UNLIMITED: UsageVerdict = {
  * back into an address, and that changes whenever the salt is rotated.
  */
 export function networkFingerprint(headers: Headers): string {
-  const forwarded = headers.get("x-forwarded-for") ?? "";
-  const ip = forwarded.split(",")[0]?.trim() || headers.get("x-real-ip") || "unknown";
-  const agent = headers.get("user-agent") ?? "";
+  const { ip, agent } = identify(headers);
+  return stableFingerprint(usageHashSalt(), ip, agent);
+}
 
-  return createHash("sha256")
-    .update(`${usageHashSalt()}|${ip}|${agent}`)
-    .digest("base64url")
-    .slice(0, 32);
+/**
+ * The same idea, but deliberately forgetful.
+ *
+ * `networkFingerprint` is stable so a daily allowance can be counted against
+ * it. This one mixes the DATE into the hash, so the same visitor produces a
+ * different value tomorrow. That is what lets the admin see "212 people came
+ * today" without the database ever being able to answer "and what did this
+ * one do last week".
+ *
+ * It costs us something real — there is no way to compute returning visitors —
+ * and that is the trade being made on purpose. A site whose promise is that
+ * files never leave the device should not keep a record that follows the
+ * person holding it.
+ */
+export function dailyVisitorHash(headers: Headers, day: string = utcDay()): string {
+  const { ip, agent } = identify(headers);
+  return dailyFingerprint(usageHashSalt(), day, ip, agent);
+}
+
+/**
+ * Pull the network identity out of a request.
+ *
+ * This is the only place a raw IP address is read, and it goes straight into a
+ * hash without being returned, stored or logged anywhere else.
+ */
+function identify(headers: Headers): { ip: string; agent: string } {
+  const forwarded = headers.get("x-forwarded-for") ?? "";
+  return {
+    ip: forwarded.split(",")[0]?.trim() || headers.get("x-real-ip") || "unknown",
+    agent: headers.get("user-agent") ?? "",
+  };
 }
 
 /**

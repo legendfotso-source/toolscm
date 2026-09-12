@@ -2,20 +2,26 @@
 
 import { useState } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
-import type { AdminStats } from "@/lib/admin";
+import type { AdminStats, Audience, Member } from "@/lib/admin";
 import type { AdminSettings } from "@/lib/settings";
 import { getTool } from "@/lib/tools/registry";
 import { AdminProAccess } from "./AdminProAccess";
 import { AdminReminders } from "./AdminReminders";
 import { AdminActivity } from "./AdminActivity";
+import { AdminAudience } from "./AdminAudience";
+import { AdminMembers } from "./AdminMembers";
 import { Button, Card, Notice, SectionHeading, cx } from "./ui";
 
 export function AdminDashboard({
   stats,
   settings,
+  audience,
+  members,
 }: {
   stats: AdminStats;
   settings: AdminSettings;
+  audience: Audience | null;
+  members: Member[];
 }) {
   const { locale, tx } = useLocale();
   const [draft, setDraft] = useState<AdminSettings>(settings);
@@ -56,7 +62,12 @@ export function AdminDashboard({
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+        <Stat
+          label={fr ? "Visiteurs aujourd'hui" : "Visitors today"}
+          value={number(audience?.visitorsToday ?? 0)}
+          highlight
+        />
         <Stat
           label={fr ? "Opérations aujourd'hui" : "Operations today"}
           value={number(stats.operationsToday)}
@@ -71,7 +82,11 @@ export function AdminDashboard({
         />
       </div>
 
-      <div className="mt-8 grid gap-6 lg:grid-cols-2">
+      <div className="mt-8">
+        <AdminAudience audience={audience} />
+      </div>
+
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
         <Card className="p-5">
           <h2 className="text-[16px] font-bold text-ink">
             {fr ? "Outils les plus utilisés (7 jours)" : "Most used tools (7 days)"}
@@ -189,6 +204,10 @@ export function AdminDashboard({
         <AdminReminders expiring={stats.expiring} priceXaf={settings.price_xaf} />
 
         <AdminActivity stats={stats} />
+      </div>
+
+      <div className="mt-6">
+        <AdminMembers members={members} />
       </div>
     </div>
   );

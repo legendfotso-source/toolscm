@@ -69,6 +69,37 @@ async function promoteFirstAdmin(userId: string, email: string): Promise<boolean
   return true;
 }
 
+export type DayCount = { day: string; views: number; visitors: number };
+
+export type Audience = {
+  viewsToday: number;
+  visitorsToday: number;
+  views7d: number;
+  /**
+   * Distinct visitors summed over each of the last seven days.
+   *
+   * Not the number of different people: the identifier is re-salted daily, so
+   * somebody who came on three days is counted three times. That is the price
+   * of not being able to follow anyone around, and the dashboard says so in
+   * as many words rather than presenting a flattering number.
+   */
+  visitorDays7d: number;
+  daily: DayCount[];
+  topPages: { path: string; views: number }[];
+  referrers: { host: string; views: number }[];
+  countries: { country: string; views: number }[];
+  devices: { mobile: number; desktop: number };
+};
+
+export type Member = {
+  email: string;
+  joinedAt: string;
+  isAdmin: boolean;
+  /** 'active' while Pro is paid up, otherwise the last status, or null. */
+  proStatus: string | null;
+  proUntil: string | null;
+};
+
 export type ExpiringRow = {
   email: string;
   phone: string | null;
@@ -163,6 +194,152 @@ export async function getAdminStats(): Promise<AdminStats | null> {
       .sort((a, b) => b.count - a.count)
       .slice(0, 8),
   };
+}
+
+/**
+ * Who came, in numbers — and only in numbers.
+ *
+ * Every figure here is a count. There is no row in the database that says a
+ * particular person visited a particular page, because the identifier the
+ * counting happens against is thrown away and re-made every night. The admin
+ * can see that 212 people arrived from WhatsApp on Tuesday and that most of
+ * them were on a phone; nobody, including the admin, can see who they were.
+ */
+export async function getAudience(): Promise<Audience | null> {
+  const client = adminClient();
+  if (!client) return null;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const weekAgo = new Date(Date.now() - 6 * 86_400_000).toISOString().slice(0, 10);
+
+  // One row per (day, path, visitor), so this stays small: a person reading
+  // eight pages is eight rows for that day, not one per refresh.
+  const { data, error } = await client
+    .from("page_views")
+    .select("day, path, visitor, country, device, referrer, views")
+    .gte("day", weekAgo)
+    .limit(50_000);
+
+  if (error) {
+    console.error("[Tools.cm] could not read the audience:", error.message);
+    return null;
+  }
+
+  const rows = (data ?? []) as {
+    day: string;
+    path: string;
+    visitor: string;
+    country: string | null;
+    device: string | null;
+    referrer: string | null;
+    views: number;
+  }[];
+
+  const perDay = new Map<string, { views: number; visitors: Set<string> }>();
+  const pages = new Map<string, number>();
+  const referrers = new Map<string, number>();
+  const countries = new Map<string, number>();
+  const devices = { mobile: 0, desktop: 0 };
+
+  for (const row of rows) {
+    const day = perDay.get(row.day) ?? { views: 0, visitors: new Set<string>() };
+    day.views += row.views;
+    day.visitors.add(row.visitor);
+    perDay.set(row.day, day);
+
+    pages.set(row.path, (pages.get(row.path) ?? 0) + row.views);
+    if (row.referrer) referrers.set(row.referrer, (referrers.get(row.referrer) ?? 0) + row.views);
+    if (row.country) countries.set(row.country, (countries.get(row.country) ?? 0) + row.views);
+    if (row.device === "mobile") devices.mobile += row.views;
+    else if (row.device === "desktop") devices.desktop += row.views;
+  }
+
+  // Every day in the window, including the ones with nothing, so a quiet
+  // Sunday shows as a gap rather than silently disappearing from the chart.
+  const daily: DayCount[] = [];
+  for (let back = 6; back >= 0; back -= 1) {
+    const day = new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
+    const entry = perDay.get(day);
+    daily.push({ day, views: entry?.views ?? 0, visitors: entry?.visitors.size ?? 0 });
+  }
+
+  const byCount = <T extends { views: number }>(a: T, b: T) => b.views - a.views;
+
+  return {
+    viewsToday: perDay.get(today)?.views ?? 0,
+    visitorsToday: perDay.get(today)?.visitors.size ?? 0,
+    views7d: daily.reduce((sum, day) => sum + day.views, 0),
+    visitorDays7d: daily.reduce((sum, day) => sum + day.visitors, 0),
+    daily,
+    topPages: [...pages.entries()].map(([path, views]) => ({ path, views })).sort(byCount).slice(0, 10),
+    referrers: [...referrers.entries()].map(([host, views]) => ({ host, views })).sort(byCount).slice(0, 8),
+    countries: [...countries.entries()].map(([country, views]) => ({ country, views })).sort(byCount).slice(0, 8),
+    devices,
+  };
+}
+
+/**
+ * Everyone who has an account, newest first.
+ *
+ * This one is a list of real people with real email addresses, and that is
+ * exactly why it is behind `isAdmin()` and why /admin returns notFound() to
+ * everyone else. Free use needs no account, so this is the small minority who
+ * chose to create one — it is never the same thing as "who uses the site".
+ */
+export async function getMembers(limit = 200): Promise<Member[]> {
+  const client = adminClient();
+  if (!client) return [];
+
+  const { data, error } = await client
+    .from("profiles")
+    .select("id, email, is_admin, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error("[Tools.cm] could not list members:", error.message);
+    return [];
+  }
+
+  const profiles = (data ?? []) as {
+    id: string;
+    email: string | null;
+    is_admin: boolean;
+    created_at: string;
+  }[];
+  if (profiles.length === 0) return [];
+
+  // One query for the subscriptions rather than one per member.
+  const { data: subsData } = await client
+    .from("subscriptions")
+    .select("user_id, status, end_date")
+    .in("user_id", profiles.map((row) => row.id))
+    .order("end_date", { ascending: false, nullsFirst: false });
+
+  const subs = new Map<string, { status: string; end_date: string | null }>();
+  for (const row of (subsData ?? []) as {
+    user_id: string;
+    status: string;
+    end_date: string | null;
+  }[]) {
+    const existing = subs.get(row.user_id);
+    // An active subscription always wins over an expired one, whatever the
+    // dates say; otherwise the newest end date is the interesting one.
+    if (!existing || (row.status === "active" && existing.status !== "active")) {
+      subs.set(row.user_id, { status: row.status, end_date: row.end_date });
+    }
+  }
+
+  return profiles.map((row) => {
+    const sub = subs.get(row.id);
+    return {
+      email: row.email ?? "",
+      joinedAt: row.created_at,
+      isAdmin: row.is_admin,
+      proStatus: sub?.status ?? null,
+      proUntil: sub?.end_date ?? null,
+    };
+  });
 }
 
 /**

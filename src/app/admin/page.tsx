@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AdminDashboard } from "@/components/AdminDashboard";
-import { getAdminStats, isAdmin } from "@/lib/admin";
+import { getAdminStats, getAudience, getMembers, isAdmin } from "@/lib/admin";
 import { getSettings } from "@/lib/settings";
 
 export const metadata: Metadata = {
@@ -16,8 +16,15 @@ export default async function AdminPage() {
   // learns nothing about whether this page exists.
   if (!(await isAdmin())) notFound();
 
-  const [stats, settings] = await Promise.all([getAdminStats(), getSettings()]);
+  const [stats, settings, audience, members] = await Promise.all([
+    getAdminStats(),
+    getSettings(),
+    getAudience(),
+    getMembers(),
+  ]);
   if (!stats) notFound();
 
-  return <AdminDashboard stats={stats} settings={settings} />;
+  return (
+    <AdminDashboard stats={stats} settings={settings} audience={audience} members={members} />
+  );
 }

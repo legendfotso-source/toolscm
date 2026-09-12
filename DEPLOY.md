@@ -119,6 +119,20 @@ In the Supabase dashboard → **Authentication → URL Configuration**:
 
 You stay an administrator. The shortcut closes behind you.
 
+`/admin` then shows you two things about people:
+
+- **Visitors** — how many came today and over the last week, which pages they
+  opened, which site sent them, and how many were on a phone. These are counts
+  and only counts. The identifier the counting happens against is re-salted
+  every night, so nobody — including you — can ask "what has this person been
+  doing all week". That limit is deliberate and the privacy page states it.
+- **Accounts created** — the people who signed up, with their email address,
+  the date they joined, and whether they are Pro. This is a small minority of
+  your visitors on purpose: every tool works without an account.
+
+Both need `SUPABASE_SERVICE_ROLE_KEY`. Without it there is no `/admin` at all
+and no visit is recorded.
+
 If `/admin` shows "page not found", you are signed in with a different email —
 that page deliberately reveals nothing to non-administrators.
 
