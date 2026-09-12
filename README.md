@@ -30,11 +30,15 @@ No environment variables are needed. Every published tool works with no
 configuration, because the processing happens on the visitor's device.
 
 ```bash
-npm run build        # production build
-npm start            # serve the production build
-npm run typecheck    # tsc --noEmit
-npm run lint         # eslint
-npm run test:tools   # drive every tool in a real browser (see Verification)
+npm run build         # production build
+npm start             # serve the production build
+npm run typecheck     # tsc --noEmit
+npm run lint          # eslint
+
+npm run test:tools    # drive every tool in a real browser
+npm run test:db       # apply the migration to a throwaway PostgreSQL and check it
+npm run test:money    # run grantPro and settlePayment for real
+npm run test:payments # dates, receipts, plans, webhook signatures
 ```
 
 `npm run assets` (run automatically before `dev` and `build`) copies the pdf.js

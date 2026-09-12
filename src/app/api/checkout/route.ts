@@ -52,7 +52,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
 
   const { provider, plan: planId } = parsed.data;
-  const plan = getPlan(settings.price_xaf, planId);
+  const plan = getPlan(settings.price_xaf, planId, settings.price_usd * 100);
 
   if (provider === "notchpay" && !notchpayConfigured()) {
     return NextResponse.json({ error: "provider_unavailable" }, { status: 409 });
@@ -64,11 +64,12 @@ export async function POST(request: Request) {
   // Stripe is billed in USD; NotchPay in XAF. Mixing them into one number
   // would make the revenue figure meaningless, so each payment records the
   // currency it was actually taken in.
+  //
+  // Both amounts come from the SAME plan, so the discount the button advertises
+  // is the discount the card is charged. Computing the dollar price separately
+  // here is how that silently stopped being true once already.
   const currency = provider === "stripe" ? "USD" : "XAF";
-  const amount =
-    provider === "stripe"
-      ? Math.max(50, Math.round(settings.price_usd * 100 * (plan.days / 30)))
-      : plan.amountXaf;
+  const amount = provider === "stripe" ? Math.max(50, plan.amountUsdCents) : plan.amountXaf;
 
   const reference = `tcm_${randomUUID().replace(/-/g, "")}`;
 

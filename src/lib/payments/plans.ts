@@ -21,6 +21,15 @@ export type Plan = {
   days: number;
   /** Minor units, same convention as the payments table. XAF has none. */
   amountXaf: number;
+  /**
+   * The same plan in US cents, for card payments.
+   *
+   * Derived from the SAME multipliers as the FCFA price. It has to be: the
+   * plan selector shows one discount badge, computed once, and a card customer
+   * being charged full price while the button says −25% would be a promise the
+   * checkout does not keep.
+   */
+  amountUsdCents: number;
   /** What the customer saves against paying monthly, as a percentage. */
   savingPercent: number;
 };
@@ -40,30 +49,47 @@ const MULTIPLIERS: Record<PlanId, { months: number; pay: number }> = {
   yearly: { months: 12, pay: 9 },
 };
 
-function roundTo500(amount: number): number {
-  return Math.round(amount / 500) * 500;
+function roundTo(amount: number, step: number): number {
+  return Math.round(amount / step) * step;
 }
 
-export function plans(monthlyXaf: number): Plan[] {
+/** The monthly card price, in US cents. */
+const DEFAULT_MONTHLY_USD_CENTS = 500;
+
+export function plans(
+  monthlyXaf: number,
+  monthlyUsdCents: number = DEFAULT_MONTHLY_USD_CENTS,
+): Plan[] {
   return (Object.keys(MULTIPLIERS) as PlanId[]).map((id) => {
     const { months, pay } = MULTIPLIERS[id];
-    const amountXaf = id === "monthly" ? monthlyXaf : roundTo500(monthlyXaf * pay);
+
+    // FCFA to the nearest 500, dollars to the nearest 50 cents — both so the
+    // price is one a person can say out loud.
+    const amountXaf = id === "monthly" ? monthlyXaf : roundTo(monthlyXaf * pay, 500);
+    const amountUsdCents =
+      id === "monthly" ? monthlyUsdCents : roundTo(monthlyUsdCents * pay, 50);
+
     const full = monthlyXaf * months;
 
     return {
       id,
       days: TERM_DAYS * months,
       amountXaf,
+      amountUsdCents,
       savingPercent: full > 0 ? Math.round((1 - amountXaf / full) * 100) : 0,
     };
   });
 }
 
-export function getPlan(monthlyXaf: number, id: PlanId): Plan {
-  const found = plans(monthlyXaf).find((plan) => plan.id === id);
+export function getPlan(
+  monthlyXaf: number,
+  id: PlanId,
+  monthlyUsdCents?: number,
+): Plan {
+  const all = plans(monthlyXaf, monthlyUsdCents);
   // Callers pass a validated id, but falling back to monthly is safer than
   // throwing inside a payment path.
-  return found ?? plans(monthlyXaf)[0];
+  return all.find((plan) => plan.id === id) ?? all[0];
 }
 
 export function planName(id: PlanId, fr: boolean): string {

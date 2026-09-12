@@ -365,6 +365,34 @@ check("Stripe verification fails closed on junk headers", () => {
 
 /* ---------------- plans ---------------- */
 
+check("the card price honours the same discount as the FCFA price", () => {
+  // The plan selector shows ONE discount badge, computed from the FCFA price.
+  // A card customer charged full price while the button says −25% is a promise
+  // the checkout does not keep — which is exactly what happened before the
+  // dollar amount was derived from the same plan.
+  for (const plan of plans(2000, 500)) {
+    const months = plan.days / 30;
+    const fullXaf = 2000 * months;
+    const fullUsd = 500 * months;
+
+    const xafDiscount = 1 - plan.amountXaf / fullXaf;
+    const usdDiscount = 1 - plan.amountUsdCents / fullUsd;
+
+    assert.ok(
+      Math.abs(xafDiscount - usdDiscount) < 0.03,
+      `${plan.id}: ${(xafDiscount * 100).toFixed(0)}% off in FCFA but ${(usdDiscount * 100).toFixed(0)}% off on card`,
+    );
+  }
+  return "both currencies discount alike";
+});
+
+check("card prices land on a round half-dollar", () => {
+  for (const plan of plans(2000, 500)) {
+    assert.equal(plan.amountUsdCents % 50, 0, `${plan.id} is ${plan.amountUsdCents} cents`);
+  }
+  return "12.50 and 45.00, not 12.47";
+});
+
 check("longer plans cost less per month and are priced in round numbers", () => {
   const [monthly, quarterly, yearly] = plans(2000);
   assert.equal(monthly.amountXaf, 2000);

@@ -13,7 +13,9 @@
     "fixtures": "node tests/make-fixtures.mjs",
     "screenshots": "node tests/screenshots.mjs",
     "test:supabase": "node tests/verify-supabase.mjs",
-    "test:payments": "node tests/run-payment-tests.mjs"
+    "test:payments": "node tests/run-payment-tests.mjs",
+    "test:db": "node tests/run-db-tests.mjs",
+    "test:money": "node tests/run-money-tests.mjs"
   },
   "dependencies": {
     "@imgly/background-removal": "^1.7.0",

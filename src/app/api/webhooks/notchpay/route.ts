@@ -32,17 +32,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "bad_signature" }, { status: 401 });
   }
 
-  let event: { event?: string; data?: { reference?: string; merchant_reference?: string } };
+  /**
+   * The documented shape is:
+   *
+   *   { id: "evt_...", type: "payment.complete", created_at, data: {
+   *       id: "pay_...",        // NotchPay's own id
+   *       reference: "tcm_...", // OUR reference, echoed back
+   *       amount, currency, status, customer, created_at, completed_at } }
+   *
+   * `data.reference` is the merchant reference — the one we issued. `data.id`
+   * is theirs.
+   */
+  let event: {
+    type?: string;
+    data?: { reference?: string; merchant_reference?: string; id?: string };
+  };
   try {
     event = JSON.parse(raw);
   } catch {
     return NextResponse.json({ error: "invalid_json" }, { status: 400 });
   }
 
-  // NotchPay quotes our own reference back. Prefer the merchant reference when
-  // present, since that is unambiguously the one we issued.
-  const reference = event.data?.merchant_reference ?? event.data?.reference;
+  // Read the merchant reference from either spelling. Being tolerant here
+  // costs nothing and is worth it: if the field were ever named differently
+  // than documented, a payment would silently never be granted and the
+  // customer would be out of pocket with no error anywhere.
+  const reference = event.data?.reference ?? event.data?.merchant_reference;
   if (!reference) {
+    // Deliberately 200: a notification we cannot act on will never become
+    // actionable, so there is nothing for NotchPay to retry.
+    console.warn("[Tools.cm] notchpay webhook carried no reference:", event.type);
     return NextResponse.json({ ok: true, ignored: "no_reference" });
   }
 
