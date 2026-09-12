@@ -156,6 +156,20 @@ export function AuthForm({ mode }: { mode: Mode }) {
               <Button type="submit" size="lg" className="w-full" disabled={busy}>
                 {busy ? t("auth.working") : mode === "signup" ? t("auth.signUp") : t("auth.signIn")}
               </Button>
+
+              {/* Only on sign-in: someone creating an account has no password
+                  to have forgotten, and the extra link is one more thing to
+                  read on a small screen. */}
+              {mode === "signin" ? (
+                <p className="text-center text-[13.5px]">
+                  <Link
+                    href="/reset-password"
+                    className="text-ink-soft underline underline-offset-2 hover:text-violet-deep"
+                  >
+                    {t("auth.forgotPassword")}
+                  </Link>
+                </p>
+              ) : null}
             </form>
 
             <p className="mt-5 text-center text-[13.5px] text-ink-soft">

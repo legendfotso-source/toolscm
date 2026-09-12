@@ -25,8 +25,56 @@ export async function isAdmin(): Promise<boolean> {
     .maybeSingle();
 
   if (error || !data) return false;
-  return (data as { is_admin: boolean }).is_admin === true;
+  if ((data as { is_admin: boolean }).is_admin === true) return true;
+
+  return promoteFirstAdmin(user.id, user.email ?? "");
 }
+
+/**
+ * Make the first administrator, once, from an environment variable.
+ *
+ * Without this there is a chicken-and-egg problem on every fresh deployment:
+ * /admin needs an admin, and the only way to make one is a hand-written SQL
+ * UPDATE against the production database. That is a step people get wrong, or
+ * skip and then keep the service-role key somewhere convenient instead.
+ *
+ * Safe because ADMIN_EMAIL is a server-side variable — it is never sent to the
+ * browser, and nobody can set it by signing up with a particular address. The
+ * comparison is case-insensitive because email addresses are, and people do
+ * not type their own address the same way twice.
+ *
+ * Clear the variable once you have access; the `is_admin` column is then the
+ * only thing that grants it.
+ */
+async function promoteFirstAdmin(userId: string, email: string): Promise<boolean> {
+  const configured = (process.env.ADMIN_EMAIL ?? "").trim().toLowerCase();
+  if (!configured || !email || configured !== email.trim().toLowerCase()) return false;
+
+  const client = adminClient();
+  if (!client) return false;
+
+  const { error } = await client
+    .from("profiles")
+    .update({ is_admin: true })
+    .eq("id", userId);
+
+  if (error) {
+    console.error("[Tools.cm] could not promote the first admin:", error.message);
+    return false;
+  }
+
+  console.warn(
+    `[Tools.cm] ${email} was made an administrator from ADMIN_EMAIL. Clear that variable now.`,
+  );
+  return true;
+}
+
+export type ExpiringRow = {
+  email: string;
+  phone: string | null;
+  proUntil: string;
+  daysLeft: number;
+};
 
 export type AdminStats = {
   operationsToday: number;
@@ -35,6 +83,8 @@ export type AdminStats = {
   activeSubscriptions: number;
   revenueXaf: number;
   topTools: { tool: string; count: number }[];
+  /** Subscriptions ending within the reminder window, soonest first. */
+  expiring: ExpiringRow[];
 };
 
 /** The figures the dashboard shows. All computed from real rows. */
@@ -45,7 +95,9 @@ export async function getAdminStats(): Promise<AdminStats | null> {
   const today = new Date().toISOString().slice(0, 10);
   const weekAgo = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
 
-  const [usageToday, usageWeek, subscriptions, payments] = await Promise.all([
+  const soon = new Date(Date.now() + 4 * 86_400_000).toISOString();
+
+  const [usageToday, usageWeek, subscriptions, payments, expiring] = await Promise.all([
     client
       .from("usage_logs")
       .select("subject, count, tool")
@@ -61,6 +113,16 @@ export async function getAdminStats(): Promise<AdminStats | null> {
       .select("id", { count: "exact", head: true })
       .eq("status", "active"),
     client.from("payments").select("amount, currency").eq("status", "succeeded"),
+    // Everyone whose access runs out in the next few days. Ordered soonest
+    // first, because that is the order you would call them in.
+    client
+      .from("subscriptions")
+      .select("user_id, end_date, profiles(email)")
+      .eq("status", "active")
+      .not("end_date", "is", null)
+      .lte("end_date", soon)
+      .order("end_date", { ascending: true })
+      .limit(50),
   ]);
 
   const todayRows = (usageToday.data ?? []) as { subject: string; count: number }[];
@@ -73,6 +135,7 @@ export async function getAdminStats(): Promise<AdminStats | null> {
   }
 
   return {
+    expiring: await withPhones(client, expiring.data ?? []),
     operationsToday: todayRows.reduce((sum, row) => sum + row.count, 0),
     operations7d: weekRows.reduce((sum, row) => sum + row.count, 0),
     devicesToday: new Set(todayRows.map((row) => row.subject)).size,
@@ -87,4 +150,46 @@ export async function getAdminStats(): Promise<AdminStats | null> {
       .sort((a, b) => b.count - a.count)
       .slice(0, 8),
   };
+}
+
+/**
+ * Attach the phone number each customer last paid with.
+ *
+ * It lives in the payment's `raw` blob rather than on the profile, because it
+ * is what the admin typed at activation time — the number that actually
+ * reached them — not something the customer registered and forgot. Without it
+ * a reminder has no way to be sent.
+ */
+async function withPhones(
+  client: NonNullable<ReturnType<typeof adminClient>>,
+  rows: unknown[],
+): Promise<ExpiringRow[]> {
+  const subs = rows as { user_id: string; end_date: string; profiles: { email: string } | null }[];
+  if (subs.length === 0) return [];
+
+  const { data } = await client
+    .from("payments")
+    .select("user_id, raw, created_at")
+    .in("user_id", subs.map((row) => row.user_id))
+    .eq("status", "succeeded")
+    .order("created_at", { ascending: false });
+
+  const phones = new Map<string, string>();
+  for (const payment of (data ?? []) as { user_id: string; raw: { phone?: unknown } | null }[]) {
+    const phone = payment.raw?.phone;
+    // Newest first, so the first one seen for a user is the most recent.
+    if (typeof phone === "string" && phone && !phones.has(payment.user_id)) {
+      phones.set(payment.user_id, phone);
+    }
+  }
+
+  const dayInDouala = (date: Date) => Math.floor((date.getTime() + 3_600_000) / 86_400_000);
+  const today = dayInDouala(new Date());
+
+  return subs.map((row) => ({
+    email: row.profiles?.email ?? "",
+    phone: phones.get(row.user_id) ?? null,
+    proUntil: row.end_date,
+    daysLeft: dayInDouala(new Date(row.end_date)) - today,
+  }));
 }

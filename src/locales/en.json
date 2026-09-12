@@ -275,6 +275,7 @@
     "planPro": "Pro",
     "proUntil": "Active until {date}",
     "notConfigured": "Accounts are not enabled on this deployment yet.",
-    "working": "One moment..."
+    "working": "One moment...",
+    "forgotPassword": "Forgotten your password?"
   }
 }

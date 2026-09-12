@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { browserClient } from "@/lib/supabase/browser";
 import { type Receipt, receiptMessage } from "@/lib/payments/receipt";
+import { REMIND_WITHIN_DAYS, daysUntil } from "@/lib/payments/reminders";
 import { ManualPayment } from "./ManualPayment";
 import { Badge, Button, ButtonLink, Notice, SectionHeading } from "./ui";
 import { Breadcrumbs } from "./Breadcrumbs";
@@ -77,7 +78,30 @@ export function AccountContent({
               </div>
             </div>
 
-            {!isPro ? (
+            {/* A quiet warning beats a surprise loss of access. Shown only
+                inside the reminder window, so it is not permanent furniture. */}
+            {isPro && proUntil && daysUntil(proUntil) <= REMIND_WITHIN_DAYS ? (
+              <Notice tone="warn" className="mt-4">
+                {(() => {
+                  const left = daysUntil(proUntil);
+                  if (left <= 0) {
+                    return locale === "fr"
+                      ? "Votre accès Pro se termine aujourd'hui."
+                      : "Your Pro access ends today.";
+                  }
+                  if (left === 1) {
+                    return locale === "fr"
+                      ? "Votre accès Pro se termine demain. Renouvelez pour ne pas être interrompu."
+                      : "Your Pro access ends tomorrow. Renew to avoid an interruption.";
+                  }
+                  return locale === "fr"
+                    ? `Votre accès Pro se termine dans ${left} jours.`
+                    : `Your Pro access ends in ${left} days.`;
+                })()}
+              </Notice>
+            ) : null}
+
+            {!isPro || (proUntil && daysUntil(proUntil) <= REMIND_WITHIN_DAYS) ? (
               <div className="mt-4">
                 <ManualPayment />
               </div>

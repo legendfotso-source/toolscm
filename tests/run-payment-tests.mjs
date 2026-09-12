@@ -73,7 +73,7 @@ function check(name, fn) {
   }
 }
 
-const out = compile("term.ts", "receipt.ts", "signatures.ts", "plans.ts");
+const out = compile("term.ts", "receipt.ts", "signatures.ts", "plans.ts", "reminders.ts");
 const { nextEndDate, TERM_DAYS } = await import(join(out, "term.js"));
 const { receiptReference, receiptMessage, whatsappNumber } = await import(
   join(out, "receipt.js")
@@ -82,6 +82,9 @@ const { verifyNotchpaySignature, verifyStripeSignature } = await import(
   join(out, "signatures.js")
 );
 const { plans, getPlan } = await import(join(out, "plans.js"));
+const { daysUntil, reminderMessage, REMIND_WITHIN_DAYS } = await import(
+  join(out, "reminders.js")
+);
 const { createHmac } = await import("node:crypto");
 
 const day = (iso) => new Date(iso);
@@ -387,6 +390,67 @@ check("an unknown plan id falls back to monthly rather than throwing", () => {
   // Inside a payment path, a wrong-but-safe answer beats an exception.
   assert.equal(getPlan(2000, "nonsense").id, "monthly");
   return "falls back safely";
+});
+
+/* ---------------- renewal reminders ---------------- */
+
+check("days left counts calendar days, not 24-hour blocks", () => {
+  // Access ending at 08:00 tomorrow is "1 day left". Counting whole 24-hour
+  // periods would call that 0 and tell a paying customer they had expired.
+  const now = new Date("2026-09-12T18:00:00Z"); // 19:00 in Douala
+  assert.equal(daysUntil("2026-09-13T08:00:00Z", now), 1);
+  // 20:00 UTC is 21:00 in Douala — still the same day there, so zero days
+  // left. (23:00 UTC would already be past midnight in Douala and count as
+  // tomorrow, which is exactly the boundary this offset exists to get right.)
+  assert.equal(daysUntil("2026-09-12T20:00:00Z", now), 0);
+  assert.equal(daysUntil("2026-09-12T23:00:00Z", now), 1);
+  assert.equal(daysUntil("2026-09-15T02:00:00Z", now), 3);
+  return "counted in Douala, so the midnight boundary lands correctly";
+});
+
+check("an already-expired subscription reads as negative or zero", () => {
+  const now = new Date("2026-09-12T12:00:00Z");
+  assert.ok(daysUntil("2026-09-09T12:00:00Z", now) < 0);
+  return "past dates do not wrap around";
+});
+
+check("a malformed end date does not throw", () => {
+  assert.equal(daysUntil("not-a-date"), 0);
+  return "returns 0 rather than NaN";
+});
+
+check("the reminder says when access ends and what it costs", () => {
+  const message = reminderMessage(
+    { daysLeft: 3, proUntil: "2026-10-12T09:00:00Z" },
+    "2 000 FCFA",
+    "fr",
+  );
+  assert.ok(message.includes("3 jours"), "no countdown");
+  assert.ok(message.includes("12 octobre"), "no date");
+  assert.ok(message.includes("2 000 FCFA"), "no price");
+  return "countdown, date and price all present";
+});
+
+check("the reminder reads naturally at one day and at zero", () => {
+  const tomorrow = reminderMessage(
+    { daysLeft: 1, proUntil: "2026-10-12T09:00:00Z" },
+    "2 000 FCFA",
+    "fr",
+  );
+  const expired = reminderMessage(
+    { daysLeft: 0, proUntil: "2026-10-12T09:00:00Z" },
+    "2 000 FCFA",
+    "fr",
+  );
+  assert.ok(tomorrow.includes("demain"), "does not say tomorrow");
+  assert.ok(!tomorrow.includes("1 jours"), "says '1 jours'");
+  assert.ok(expired.includes("a expiré"), "does not say expired");
+  return "demain, and a expiré — no '1 jours'";
+});
+
+check("the reminder window is short enough not to pester", () => {
+  assert.ok(REMIND_WITHIN_DAYS >= 1 && REMIND_WITHIN_DAYS <= 7);
+  return `${REMIND_WITHIN_DAYS} days`;
 });
 
 console.log("");

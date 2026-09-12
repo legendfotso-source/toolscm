@@ -275,6 +275,7 @@
     "planPro": "Pro",
     "proUntil": "Actif jusqu'au {date}",
     "notConfigured": "Les comptes ne sont pas encore activés sur ce déploiement.",
-    "working": "Un instant..."
+    "working": "Un instant...",
+    "forgotPassword": "Mot de passe oublié ?"
   }
 }
