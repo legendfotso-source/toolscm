@@ -34,8 +34,53 @@ async function check(name, fn) {
   }
 }
 
+let skipped = 0;
+
+/** A check that needs the secret key. Skipped, loudly, when it is absent. */
+async function checkPrivileged(enabled, name, fn) {
+  if (!enabled) {
+    skipped += 1;
+    console.log(`[33mSKIP[0m  ${name} — needs SUPABASE_SERVICE_ROLE_KEY`);
+    return;
+  }
+  await check(name, fn);
+}
+
 function assert(condition, message) {
   if (!condition) throw new Error(message);
+}
+
+/**
+ * A "blocked" result only counts if the DATABASE did the blocking.
+ *
+ * This matters more than it looks. `assert(error, ...)` would happily pass on a
+ * DNS failure, an offline laptop or a proxy that never let the request out —
+ * turning "we could not reach Supabase" into "Supabase refused us", which is
+ * the exact opposite conclusion. A genuine refusal always carries a
+ * Postgres/PostgREST code; a transport failure never does.
+ */
+function assertDatabaseRefused(error, message) {
+  assert(error, message);
+
+  const code = error.code ?? "";
+  const transport =
+    !code ||
+    /fetch failed|network|ENOTFOUND|ECONNREFUSED|ETIMEDOUT|allowlist|proxy/i.test(
+      error.message ?? "",
+    );
+
+  if (transport) {
+    throw new Error(
+      `the request never reached the database, so this proves nothing: ${error.message}`,
+    );
+  }
+
+  // 42501 = insufficient privilege; PGRST1xx/2xx = not exposed / no policy.
+  assert(
+    code === "42501" || code.startsWith("PGRST"),
+    `expected a permission error, got ${code}: ${error.message}`,
+  );
+  return `refused by the database (${code})`;
 }
 
 /** Minimal .env.local reader — no dependency, no shell. */
@@ -60,15 +105,23 @@ async function main() {
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url || !anonKey || !serviceKey) {
+  if (!url || !anonKey) {
     console.log(
-      "Supabase is not configured — skipping. Set NEXT_PUBLIC_SUPABASE_URL,\n" +
-        "NEXT_PUBLIC_SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY in .env.local to run these.",
+      "Supabase is not configured — skipping. Set NEXT_PUBLIC_SUPABASE_URL and\n" +
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local to run these.",
     );
     process.exit(0);
   }
 
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false } });
+  // The lockdown checks — the ones that prove a visitor's browser cannot cheat —
+  // need nothing but the publishable key, which is public by design. They are the
+  // half of this suite that matters most, so they run on their own. The
+  // privileged checks below need the secret key and are skipped without it, which
+  // means this suite can be run without ever handling that key.
+  const privileged = Boolean(serviceKey);
+  const admin = privileged
+    ? createClient(url, serviceKey, { auth: { persistSession: false } })
+    : null;
   const anon = createClient(url, anonKey, { auth: { persistSession: false } });
 
   const device = `test-${crypto.randomUUID()}`;
@@ -77,7 +130,7 @@ async function main() {
   try {
     /* ---------------- schema ---------------- */
 
-    await check("the six tables exist", async () => {
+    await checkPrivileged(privileged, "the six tables exist", async () => {
       const names = ["profiles", "subscriptions", "payments", "usage_logs", "tool_events", "admin_settings"];
       for (const name of names) {
         const { error } = await admin.from(name).select("*", { head: true, count: "exact" });
@@ -86,7 +139,7 @@ async function main() {
       return names.length + " tables reachable with the service role";
     });
 
-    await check("settings are seeded with limits OFF", async () => {
+    await checkPrivileged(privileged, "settings are seeded with limits OFF", async () => {
       const { data, error } = await admin.from("admin_settings").select("key, value");
       assert(!error, error?.message);
       const map = Object.fromEntries(data.map((row) => [row.key, row.value]));
@@ -99,7 +152,7 @@ async function main() {
 
     /* ---------------- the limit actually limits ---------------- */
 
-    await check("the fourth operation of the day is refused", async () => {
+    await checkPrivileged(privileged, "the fourth operation of the day is refused", async () => {
       const verdicts = [];
       for (let i = 0; i < 4; i += 1) {
         const { data, error } = await admin.rpc("consume_operation", {
@@ -119,7 +172,7 @@ async function main() {
       return "allowed, allowed, allowed, refused";
     });
 
-    await check("a Pro user is never counted against the limit", async () => {
+    await checkPrivileged(privileged, "a Pro user is never counted against the limit", async () => {
       // -1 is how the server expresses "no limit applies".
       const { data, error } = await admin.rpc("consume_operation", {
         p_subject_type: "device",
@@ -143,43 +196,84 @@ async function main() {
 
     await check("the browser cannot read the usage table", async () => {
       const { error } = await anon.from("usage_logs").select("*").limit(1);
-      assert(error, "usage_logs was readable with the anon key");
-      return `blocked: ${error.message.slice(0, 60)}`;
+      return assertDatabaseRefused(error, "usage_logs was readable with the anon key");
     });
 
     await check("the browser cannot write the usage table", async () => {
       const { error } = await anon
         .from("usage_logs")
         .insert({ subject_type: "device", subject: device, tool: "x", count: 0 });
-      assert(error, "usage_logs was writable with the anon key — the limit would be decorative");
-      return `blocked: ${error.message.slice(0, 60)}`;
+      return assertDatabaseRefused(
+        error,
+        "usage_logs was writable with the anon key — the limit would be decorative",
+      );
     });
 
     await check("the browser cannot read the settings table", async () => {
       const { error } = await anon.from("admin_settings").select("*").limit(1);
-      assert(error, "admin_settings was readable with the anon key");
-      return `blocked: ${error.message.slice(0, 60)}`;
+      return assertDatabaseRefused(error, "admin_settings was readable with the anon key");
     });
 
     await check("the browser cannot grant itself Pro", async () => {
       const { error } = await anon
         .from("subscriptions")
         .insert({ user_id: crypto.randomUUID(), provider: "manual", status: "active" });
-      assert(error, "a subscription was insertable with the anon key");
-      return `blocked: ${error.message.slice(0, 60)}`;
+      return assertDatabaseRefused(error, "a subscription was insertable with the anon key");
     });
 
     await check("the browser cannot read other people's profiles", async () => {
       const { data, error } = await anon.from("profiles").select("*").limit(1);
       // Either a privilege error or an empty result is acceptable — what must
-      // never happen is rows coming back.
-      assert(error || (data ?? []).length === 0, "profile rows were returned to an anonymous caller");
-      return error ? `blocked: ${error.message.slice(0, 50)}` : "no rows returned";
+      // never happen is rows coming back. A transport failure is neither.
+      if (error) return assertDatabaseRefused(error, "unreachable");
+      assert((data ?? []).length === 0, "profile rows were returned to an anonymous caller");
+      return "reached the database, no rows returned";
+    });
+
+    /* ---------------- the security definer bypass ---------------- */
+
+    // These exist because locking the tables was not enough. The functions are
+    // `security definer`, so they ignore table grants and row level security
+    // entirely — and PostgreSQL had granted EXECUTE on them to PUBLIC by
+    // default. A visitor could write usage_logs through consume_operation even
+    // though usage_logs itself was unreachable. Never assume a revoke worked;
+    // ask the database.
+    await check("the browser cannot call consume_operation", async () => {
+      const { error } = await anon.rpc("consume_operation", {
+        p_subject_type: "device",
+        p_subject: `probe-${crypto.randomUUID()}`,
+        p_tool: "compress-pdf",
+        p_limit: -1,
+      });
+      return assertDatabaseRefused(
+        error,
+        "consume_operation was callable anonymously — the daily limit could be bypassed entirely",
+      );
+    });
+
+    await check("the browser cannot call peek_usage", async () => {
+      const { error } = await anon.rpc("peek_usage", {
+        p_subject_type: "device",
+        p_subject: "probe",
+      });
+      return assertDatabaseRefused(error, "peek_usage was callable anonymously");
+    });
+
+    await check("the browser cannot call expire_subscriptions", async () => {
+      const { error } = await anon.rpc("expire_subscriptions");
+      return assertDatabaseRefused(error, "expire_subscriptions was callable anonymously");
+    });
+
+    await check("the browser cannot call has_active_subscription", async () => {
+      const { error } = await anon.rpc("has_active_subscription", {
+        p_user_id: crypto.randomUUID(),
+      });
+      return assertDatabaseRefused(error, "has_active_subscription was callable anonymously");
     });
 
     /* ---------------- webhook idempotency ---------------- */
 
-    await check("the same payment cannot be recorded twice", async () => {
+    await checkPrivileged(privileged, "the same payment cannot be recorded twice", async () => {
       const transaction = `verify-${crypto.randomUUID()}`;
       const row = {
         provider: "manual",
@@ -202,7 +296,7 @@ async function main() {
 
     /* ---------------- subscription expiry ---------------- */
 
-    await check("expire_subscriptions is callable and returns a count", async () => {
+    await checkPrivileged(privileged, "expire_subscriptions is callable and returns a count", async () => {
       const { data, error } = await admin.rpc("expire_subscriptions");
       assert(!error, error?.message);
       assert(typeof data === "number", `expected a number, got ${typeof data}`);
@@ -210,8 +304,8 @@ async function main() {
     });
   } finally {
     // Always clean up, pass or fail.
-    await admin.from("usage_logs").delete().eq("subject", device);
-    if (limitsWereEnabled !== null) {
+    if (admin) await admin.from("usage_logs").delete().eq("subject", device);
+    if (admin && limitsWereEnabled !== null) {
       await admin
         .from("admin_settings")
         .update({ value: limitsWereEnabled })
@@ -220,7 +314,10 @@ async function main() {
   }
 
   console.log("");
-  console.log(`${results.filter((r) => r.ok).length}/${results.length} checks passed`);
+  console.log(
+    `${results.filter((r) => r.ok).length}/${results.length} checks passed` +
+      (skipped ? `, ${skipped} skipped (no secret key present)` : ""),
+  );
   process.exit(failures > 0 ? 1 : 0);
 }
 

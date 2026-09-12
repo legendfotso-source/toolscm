@@ -329,8 +329,17 @@ as $$
      and day = (now() at time zone 'utc')::date;
 $$;
 
--- Nothing here is callable from the browser: every one of these runs from
--- server code holding the service role key.
+-- These functions must only ever run from server code holding the secret key.
+--
+-- NOTE: revoking from `anon` and `authenticated` by name is NOT enough, and
+-- believing otherwise left a real hole in this project for a while. PostgreSQL
+-- grants EXECUTE to the PUBLIC pseudo-role on every new function, and both
+-- roles inherit it from there — so these three lines revoke a privilege that
+-- was never granted directly and change nothing.
+--
+-- 0002_lock_down_functions.sql revokes from PUBLIC, which is where the
+-- privilege actually lives, and grants it back to service_role alone. These
+-- lines are kept only so this file still reads as what was originally run.
 revoke execute on function public.consume_operation(public.usage_subject, text, text, integer) from anon, authenticated;
 revoke execute on function public.peek_usage(public.usage_subject, text) from anon, authenticated;
 revoke execute on function public.expire_subscriptions() from anon, authenticated;

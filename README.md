@@ -220,14 +220,37 @@ accident.
 ### Setting it up
 
 1. Create a Supabase project (free tier is enough).
-2. Run `supabase/migrations/0001_init.sql` in the SQL editor.
+2. Run `supabase/migrations/0001_init.sql`, then
+   `supabase/migrations/0002_lock_down_functions.sql`, in the SQL editor.
+   **0002 is not optional** — see "A hole this found" below.
 3. Copy `.env.example` to `.env.local` and fill in the three Supabase values
    plus a random `USAGE_HASH_SALT`.
 4. `npm run test:supabase` — proves the limit really limits and that the
-   browser cannot read or write the tables that decide it. It skips cleanly
-   when no keys are present.
+   browser cannot reach the tables or the functions that decide it. It skips
+   cleanly when no keys are present. The checks that matter most need only the
+   *publishable* key, so you can run them without handling the secret one.
 5. To make yourself an admin:
    `update public.profiles set is_admin = true where email = 'you@example.com';`
+
+### A hole this found
+
+The first migration ended with `revoke execute on function … from anon,
+authenticated` and looked locked down. It was not, and probing the live
+database with nothing but the public key proved it: every function answered
+`200` to an anonymous caller.
+
+PostgreSQL grants `EXECUTE` to the `PUBLIC` pseudo-role on every new function.
+`anon` inherits from `PUBLIC`, so revoking from it *by name* removes a
+privilege it never held directly and leaves the inherited one in place. Because
+these functions are `security definer` they ignore table grants and row level
+security — so a visitor could write `usage_logs` through `consume_operation`
+even though `usage_logs` itself was unreachable, burning someone else's
+allowance or handing themselves an unlimited one.
+
+`0002` revokes from `PUBLIC`, where the privilege actually lives, and grants it
+back to `service_role` alone. Four checks in `test:supabase` now assert it,
+because the lesson is that a revoke you did not test is a revoke you did not
+make.
 
 ### How the limit is enforced
 
