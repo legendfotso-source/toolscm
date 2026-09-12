@@ -177,6 +177,162 @@ async function currentProUntil(client: SupabaseClient, userId: string): Promise<
   return (data as { end_date: string | null } | null)?.end_date ?? null;
 }
 
+/**
+ * Reserve a payment before sending the customer to a provider.
+ *
+ * Written as `pending`, with our own reference as the transaction id. This is
+ * what lets a webhook arriving minutes later — from a machine that knows
+ * nothing about our session — be matched back to an account without trusting a
+ * single byte of the return URL.
+ */
+export async function createPendingPayment(input: {
+  userId: string;
+  provider: Provider;
+  reference: string;
+  amount: number;
+  currency: string;
+  days: number;
+  meta?: Record<string, unknown>;
+}): Promise<void> {
+  const client = requireAdminClient();
+
+  const { error } = await client.from("payments").insert({
+    user_id: input.userId,
+    provider: input.provider,
+    amount: input.amount,
+    currency: input.currency,
+    transaction_id: input.reference,
+    status: "pending",
+    // The plan length has to survive the round trip: the webhook tells us the
+    // money arrived, not what it was for.
+    raw: { days: input.days, ...(input.meta ?? {}) },
+  });
+
+  if (error) throw new Error(`could not reserve the payment: ${error.message}`);
+}
+
+export type SettleResult =
+  | { outcome: "granted"; userId: string; proUntil: string | null; paymentId: string; paidAt: string; days: number }
+  | { outcome: "already_settled" }
+  | { outcome: "unknown_reference" };
+
+/**
+ * Mark a reserved payment as paid and grant what it bought.
+ *
+ * The idempotency here is the `eq("status", "pending")` on the update. Two
+ * webhooks racing, or a webhook racing the customer's return from the payment
+ * page, both try the same conditional update; exactly one of them matches a
+ * row and the other gets nothing back and stops. No locks, no transaction, no
+ * double month.
+ *
+ * Callers MUST have confirmed with the provider that the money arrived before
+ * calling this. It does not check — it cannot, it does not know which provider
+ * it is being called for — so that check belongs at the edge, in the webhook
+ * and return handlers, where the provider's answer is available.
+ */
+export async function settlePayment(input: {
+  provider: Provider;
+  reference: string;
+  amount?: number | null;
+  currency?: string | null;
+  raw?: unknown;
+}): Promise<SettleResult> {
+  const client = requireAdminClient();
+
+  const claimed = await client
+    .from("payments")
+    .update({
+      status: "succeeded",
+      ...(typeof input.amount === "number" ? { amount: input.amount } : {}),
+      ...(input.currency ? { currency: input.currency.toUpperCase() } : {}),
+    })
+    .eq("provider", input.provider)
+    .eq("transaction_id", input.reference)
+    .eq("status", "pending")
+    .select("id, user_id, created_at, raw")
+    .maybeSingle();
+
+  const row = claimed.data as
+    | { id: string; user_id: string | null; created_at: string; raw: { days?: number } | null }
+    | null;
+
+  if (!row) {
+    // Either someone got here first (fine — the customer already has their
+    // month) or the reference is not one we issued (not fine, but also not
+    // something to act on).
+    const existing = await client
+      .from("payments")
+      .select("id")
+      .eq("provider", input.provider)
+      .eq("transaction_id", input.reference)
+      .maybeSingle();
+
+    return existing.data ? { outcome: "already_settled" } : { outcome: "unknown_reference" };
+  }
+
+  if (!row.user_id) return { outcome: "unknown_reference" };
+
+  const days = typeof row.raw?.days === "number" ? row.raw.days : TERM_DAYS;
+
+  const subscription = await client
+    .from("subscriptions")
+    .select("id, end_date")
+    .eq("user_id", row.user_id)
+    .eq("status", "active")
+    .order("end_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const current = subscription.data as { id: string; end_date: string | null } | null;
+  const end = nextEndDate(current?.end_date ?? null, days);
+  const nowIso = new Date().toISOString();
+
+  let subscriptionId: string;
+
+  if (current) {
+    await client
+      .from("subscriptions")
+      .update({ end_date: end.toISOString(), provider: input.provider, updated_at: nowIso })
+      .eq("id", current.id);
+    subscriptionId = current.id;
+  } else {
+    const inserted = await client
+      .from("subscriptions")
+      .insert({
+        user_id: row.user_id,
+        provider: input.provider,
+        status: "active",
+        start_date: nowIso,
+        end_date: end.toISOString(),
+        provider_ref: input.reference,
+      })
+      .select("id")
+      .single();
+
+    if (inserted.error) {
+      throw new Error(`could not create the subscription: ${inserted.error.message}`);
+    }
+    subscriptionId = (inserted.data as { id: string }).id;
+  }
+
+  await client
+    .from("payments")
+    .update({
+      subscription_id: subscriptionId,
+      raw: { ...(row.raw ?? {}), settled: input.raw ?? null, settledAt: nowIso },
+    })
+    .eq("id", row.id);
+
+  return {
+    outcome: "granted",
+    userId: row.user_id,
+    proUntil: end.toISOString(),
+    paymentId: row.id,
+    paidAt: row.created_at,
+    days,
+  };
+}
+
 /** Find a user by the email they signed up with. Admin paths only. */
 export async function findUserIdByEmail(email: string): Promise<string | null> {
   const client = requireAdminClient();

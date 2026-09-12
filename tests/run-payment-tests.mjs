@@ -9,7 +9,7 @@
  */
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +40,21 @@ function compile(...files) {
   );
   // Node needs the extension to treat it as an ES module in a CommonJS-free dir.
   writeFileSync(join(out, "package.json"), JSON.stringify({ type: "module" }));
+
+  // TypeScript emits bundler-style imports (`from "./term"`). Node's ESM
+  // resolver requires the extension, so add it to the emitted files rather
+  // than changing how the application itself is written.
+  for (const file of files) {
+    const emitted = join(out, file.replace(/\.ts$/, ".js"));
+    writeFileSync(
+      emitted,
+      readFileSync(emitted, "utf8").replace(
+        /(from\s+["']\.\.?\/[^"']+)(["'])/g,
+        (match, path, quote) => (path.endsWith(".js") ? match : `${path}.js${quote}`),
+      ),
+    );
+  }
+
   return out;
 }
 
@@ -58,11 +73,16 @@ function check(name, fn) {
   }
 }
 
-const out = compile("term.ts", "receipt.ts");
+const out = compile("term.ts", "receipt.ts", "signatures.ts", "plans.ts");
 const { nextEndDate, TERM_DAYS } = await import(join(out, "term.js"));
 const { receiptReference, receiptMessage, whatsappNumber } = await import(
   join(out, "receipt.js")
 );
+const { verifyNotchpaySignature, verifyStripeSignature } = await import(
+  join(out, "signatures.js")
+);
+const { plans, getPlan } = await import(join(out, "plans.js"));
+const { createHmac } = await import("node:crypto");
 
 const day = (iso) => new Date(iso);
 
@@ -248,6 +268,125 @@ check("an unusable number is refused rather than guessed at", () => {
 check("a foreign number is left alone rather than given a 237 prefix", () => {
   assert.equal(whatsappNumber("+33 6 12 34 56 78"), "33612345678");
   return "French number survives intact";
+});
+
+/* ---------------- webhook signatures ---------------- */
+/*
+ * This is the code standing between a stranger with curl and a free
+ * subscription. Every one of these tests is a way someone would try to get
+ * past it.
+ */
+
+const SECRET = "whsec_test_secret_value";
+const BODY = JSON.stringify({ event: "payment.complete", data: { reference: "tcm_abc" } });
+
+const notchSig = (body, secret = SECRET) =>
+  createHmac("sha256", secret).update(body, "utf8").digest("hex");
+
+check("a genuine NotchPay signature is accepted", () => {
+  assert.equal(verifyNotchpaySignature(BODY, notchSig(BODY), SECRET), true);
+  return "valid HMAC passes";
+});
+
+check("a tampered NotchPay body is rejected", () => {
+  // The attack that matters: take a real notification for 500 FCFA and change
+  // the amount, or point it at someone else's reference.
+  const signature = notchSig(BODY);
+  const tampered = BODY.replace("tcm_abc", "tcm_xyz");
+  assert.equal(verifyNotchpaySignature(tampered, signature, SECRET), false);
+  return "changing one character invalidates it";
+});
+
+check("a NotchPay signature made with the wrong secret is rejected", () => {
+  assert.equal(verifyNotchpaySignature(BODY, notchSig(BODY, "not-the-secret"), SECRET), false);
+  return "wrong key fails";
+});
+
+check("NotchPay verification fails closed with no secret configured", () => {
+  // The dangerous default. An unconfigured secret must reject everything, not
+  // wave everything through.
+  assert.equal(verifyNotchpaySignature(BODY, notchSig(BODY), ""), false);
+  return "no secret means no grants";
+});
+
+check("a missing or malformed NotchPay signature is rejected", () => {
+  for (const signature of [null, undefined, "", "not-hex", "abc"]) {
+    assert.equal(verifyNotchpaySignature(BODY, signature, SECRET), false, `accepted ${signature}`);
+  }
+  return "five malformed headers, all refused";
+});
+
+const stripeHeader = (body, secondsAgo = 0, secret = SECRET) => {
+  const t = Math.floor(Date.now() / 1000) - secondsAgo;
+  const v1 = createHmac("sha256", secret).update(`${t}.${body}`, "utf8").digest("hex");
+  return `t=${t},v1=${v1}`;
+};
+
+check("a genuine Stripe signature is accepted", () => {
+  assert.equal(verifyStripeSignature(BODY, stripeHeader(BODY), SECRET), true);
+  return "valid header passes";
+});
+
+check("a Stripe signature over the body alone is rejected", () => {
+  // The classic implementation bug: signing the body without the timestamp
+  // prefix. If this passed, our verifier would not be checking what Stripe
+  // actually signs.
+  const t = Math.floor(Date.now() / 1000);
+  const wrong = createHmac("sha256", SECRET).update(BODY, "utf8").digest("hex");
+  assert.equal(verifyStripeSignature(BODY, `t=${t},v1=${wrong}`, SECRET), false);
+  return "the timestamp must be part of the signed payload";
+});
+
+check("an old Stripe signature cannot be replayed", () => {
+  // Without the timestamp check, one captured signature grants Pro forever.
+  assert.equal(verifyStripeSignature(BODY, stripeHeader(BODY, 10), SECRET), true);
+  assert.equal(verifyStripeSignature(BODY, stripeHeader(BODY, 3600), SECRET), false);
+  return "10s accepted, 1h refused";
+});
+
+check("Stripe accepts either signature during a secret rotation", () => {
+  const t = Math.floor(Date.now() / 1000);
+  const good = createHmac("sha256", SECRET).update(`${t}.${BODY}`, "utf8").digest("hex");
+  const old = createHmac("sha256", "old-secret").update(`${t}.${BODY}`, "utf8").digest("hex");
+  assert.equal(verifyStripeSignature(BODY, `t=${t},v1=${old},v1=${good}`, SECRET), true);
+  return "two v1 entries, one matching";
+});
+
+check("Stripe verification fails closed on junk headers", () => {
+  for (const header of [null, "", "v1=abc", "t=notanumber,v1=abc", "garbage"]) {
+    assert.equal(verifyStripeSignature(BODY, header, SECRET), false, `accepted ${header}`);
+  }
+  assert.equal(verifyStripeSignature(BODY, stripeHeader(BODY), ""), false, "accepted empty secret");
+  return "five junk headers and an empty secret, all refused";
+});
+
+/* ---------------- plans ---------------- */
+
+check("longer plans cost less per month and are priced in round numbers", () => {
+  const [monthly, quarterly, yearly] = plans(2000);
+  assert.equal(monthly.amountXaf, 2000);
+  assert.equal(quarterly.days, 90);
+  assert.equal(yearly.days, 360);
+  assert.ok(quarterly.amountXaf < 2000 * 3, "quarterly is not a discount");
+  assert.ok(yearly.amountXaf < 2000 * 12, "yearly is not a discount");
+  for (const plan of [quarterly, yearly]) {
+    // A price of 4,833 FCFA is one nobody can pay in cash and nobody trusts.
+    assert.equal(plan.amountXaf % 500, 0, `${plan.id} is not a round number`);
+  }
+  return `${quarterly.amountXaf} for 3 months, ${yearly.amountXaf} for 12`;
+});
+
+check("changing the monthly price moves every plan with it", () => {
+  const cheap = getPlan(1000, "yearly");
+  const dear = getPlan(4000, "yearly");
+  assert.ok(dear.amountXaf > cheap.amountXaf * 3, "yearly did not follow the monthly price");
+  return `${cheap.amountXaf} vs ${dear.amountXaf}`;
+});
+
+check("an unknown plan id falls back to monthly rather than throwing", () => {
+  // Inside a payment path, a wrong-but-safe answer beats an exception.
+  assert.equal(getPlan(2000, "nonsense").id, "monthly");
+  return "falls back safely";
 });
 
 console.log("");

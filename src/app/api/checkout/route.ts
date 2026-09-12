@@ -1,0 +1,114 @@
+import { randomUUID } from "node:crypto";
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { currentUser } from "@/lib/supabase/server-client";
+import { getSettings } from "@/lib/settings";
+import { getPlan } from "@/lib/payments/plans";
+import { createPendingPayment } from "@/lib/payments/core";
+import { initialisePayment, notchpayConfigured } from "@/lib/payments/providers/notchpay";
+import { createCheckoutSession, stripeConfigured } from "@/lib/payments/providers/stripe";
+import { SITE_URL } from "@/lib/site";
+
+export const dynamic = "force-dynamic";
+
+const Body = z.object({
+  provider: z.enum(["notchpay", "stripe"]),
+  plan: z.enum(["monthly", "quarterly", "yearly"]).default("monthly"),
+});
+
+/**
+ * Start a payment.
+ *
+ * Three things are decided here, all on the server: who the customer is (from
+ * the session cookie, never from the request body), what the plan costs (from
+ * settings, never from the request body), and what reference the payment
+ * carries (generated here, stored against the user before they leave).
+ *
+ * The browser chooses only the provider and the plan length — the two things
+ * it is allowed to have an opinion about.
+ */
+export async function POST(request: Request) {
+  const settings = await getSettings();
+  if (!settings.payments_enabled) {
+    return NextResponse.json({ error: "payments_disabled" }, { status: 409 });
+  }
+
+  const user = await currentUser();
+  if (!user?.email) {
+    // Payments need an account: without one there is nothing to attach the
+    // subscription to, and no way for the customer to prove later what they
+    // bought.
+    return NextResponse.json({ error: "sign_in_required" }, { status: 401 });
+  }
+
+  let payload: unknown;
+  try {
+    payload = await request.json();
+  } catch {
+    return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+  }
+
+  const parsed = Body.safeParse(payload);
+  if (!parsed.success) return NextResponse.json({ error: "invalid_body" }, { status: 400 });
+
+  const { provider, plan: planId } = parsed.data;
+  const plan = getPlan(settings.price_xaf, planId);
+
+  if (provider === "notchpay" && !notchpayConfigured()) {
+    return NextResponse.json({ error: "provider_unavailable" }, { status: 409 });
+  }
+  if (provider === "stripe" && !stripeConfigured()) {
+    return NextResponse.json({ error: "provider_unavailable" }, { status: 409 });
+  }
+
+  // Stripe is billed in USD; NotchPay in XAF. Mixing them into one number
+  // would make the revenue figure meaningless, so each payment records the
+  // currency it was actually taken in.
+  const currency = provider === "stripe" ? "USD" : "XAF";
+  const amount =
+    provider === "stripe"
+      ? Math.max(50, Math.round(settings.price_usd * 100 * (plan.days / 30)))
+      : plan.amountXaf;
+
+  const reference = `tcm_${randomUUID().replace(/-/g, "")}`;
+
+  try {
+    await createPendingPayment({
+      userId: user.id,
+      provider,
+      reference,
+      amount,
+      currency,
+      days: plan.days,
+      meta: { plan: planId },
+    });
+
+    const returnUrl = `${SITE_URL}/payment/return?provider=${provider}&reference=${encodeURIComponent(reference)}`;
+
+    if (provider === "notchpay") {
+      const result = await initialisePayment({
+        amount,
+        currency,
+        email: user.email,
+        reference,
+        description: `Tools.cm Pro — ${plan.days} jours`,
+        callbackUrl: returnUrl,
+      });
+      return NextResponse.json({ url: result.authorizationUrl });
+    }
+
+    const session = await createCheckoutSession({
+      amount,
+      currency,
+      email: user.email,
+      reference,
+      description: `Tools.cm Pro — ${plan.days} days`,
+      successUrl: returnUrl,
+      cancelUrl: `${SITE_URL}/pricing?cancelled=1`,
+    });
+    return NextResponse.json({ url: session.url });
+  } catch (error) {
+    console.error("[Tools.cm] checkout failed:", error);
+    return NextResponse.json({ error: "checkout_failed" }, { status: 502 });
+  }
+}
