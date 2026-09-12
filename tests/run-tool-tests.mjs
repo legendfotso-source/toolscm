@@ -849,6 +849,55 @@ async function main() {
       return `both numbers shown, no overflow at 320px`;
     });
 
+    await check("every guide renders and leads to a working tool", async () => {
+      // The blog exists to bring people in from search, so each post must
+      // actually load and each tool link must reach a tool that works — a
+      // guide pointing at a "coming soon" page wastes the visit that SEO paid
+      // for.
+      const context = await browser.newContext({ viewport: { width: 320, height: 720 }, locale: "fr-FR" });
+      const page = await context.newPage();
+
+      await page.goto(`${BASE}/blog`, { waitUntil: "domcontentloaded" });
+      const slugs = await page.evaluate(() =>
+        [...document.querySelectorAll('a[href^="/blog/"]')].map((a) => a.getAttribute("href")),
+      );
+      assert(slugs.length >= 4, `expected at least four guides, found ${slugs.length}`);
+
+      const problems = [];
+      for (const slug of slugs) {
+        await page.goto(`${BASE}${slug}`, { waitUntil: "domcontentloaded" });
+
+        const heading = await page.evaluate(() => document.querySelector("h1")?.textContent ?? "");
+        if (!heading.trim()) problems.push(`${slug}: no heading`);
+
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        if (overflow > 1) problems.push(`${slug}: overflows by ${overflow}px`);
+
+        const toolLinks = await page.evaluate(() =>
+          [...document.querySelectorAll('a[href^="/tool/"]')].map((a) => a.getAttribute("href")),
+        );
+        if (toolLinks.length === 0) problems.push(`${slug}: leads to no tool`);
+
+        for (const link of toolLinks) {
+          const response = await page.goto(`${BASE}${link}`, { waitUntil: "domcontentloaded" });
+          if (!response || response.status() >= 400) {
+            problems.push(`${slug} → ${link}: ${response ? response.status() : "no response"}`);
+            continue;
+          }
+          const comingSoon = await page.evaluate(() =>
+            /bient.t disponible/i.test(document.body.innerText),
+          );
+          if (comingSoon) problems.push(`${slug} → ${link}: tool is not built yet`);
+        }
+      }
+
+      await context.close();
+      assert(problems.length === 0, problems.join("; "));
+      return `${slugs.length} guides, every tool link live`;
+    });
+
     await check("tap targets on a tool page are at least 44px tall", async () => {
       const narrow = await browser.newContext({ viewport: { width: 360, height: 780 }, locale: "fr-FR" });
       const page = await narrow.newPage();

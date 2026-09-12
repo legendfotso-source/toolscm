@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { ToolError, toToolError } from "@/lib/errors";
+import { track } from "@/lib/analytics";
 import { validateFile } from "@/lib/files";
 import { useImageObjectUrl } from "@/lib/useObjectUrl";
 import type {
@@ -154,6 +155,11 @@ export function ToolWorkbench({
     setProgress({ phase: "indeterminate" });
     setPhase("running");
 
+    // Fire-and-forget, and contentless: a tool id and a verdict, never a
+    // filename and never anything from the file itself.
+    const startedAt = Date.now();
+    track(tool.id, "start");
+
     try {
       const output = await run({
         files,
@@ -164,13 +170,22 @@ export function ToolWorkbench({
       if (controller.signal.aborted) return;
       setResult(output);
       setPhase("done");
+      track(tool.id, "success", { durationMs: Date.now() - startedAt });
     } catch (runError) {
       if (controller.signal.aborted) {
         setPhase("ready");
         return;
       }
-      setError(toToolError(runError));
+      const failure = toToolError(runError);
+      setError(failure);
       setPhase("error");
+      // The error KEY — one of our own translation keys, such as
+      // "errors.badPdf" — not the message, which could contain anything a
+      // library chose to put in it.
+      track(tool.id, "error", {
+        durationMs: Date.now() - startedAt,
+        errorKey: failure.key.replace(/[^a-z0-9_.-]/gi, ""),
+      });
     } finally {
       abortRef.current = null;
     }

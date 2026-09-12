@@ -58,6 +58,9 @@ export function Footer() {
             </h2>
             <ul className="mt-3 space-y-2">
               <li>
+                <FooterLink href="/blog">{t("nav.blog")}</FooterLink>
+              </li>
+              <li>
                 <FooterLink href="/pricing">{t("nav.pricing")}</FooterLink>
               </li>
               <li>

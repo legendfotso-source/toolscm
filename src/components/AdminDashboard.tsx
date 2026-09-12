@@ -7,6 +7,7 @@ import type { AdminSettings } from "@/lib/settings";
 import { getTool } from "@/lib/tools/registry";
 import { AdminProAccess } from "./AdminProAccess";
 import { AdminReminders } from "./AdminReminders";
+import { AdminActivity } from "./AdminActivity";
 import { Button, Card, Notice, SectionHeading, cx } from "./ui";
 
 export function AdminDashboard({
@@ -186,6 +187,8 @@ export function AdminDashboard({
         <AdminProAccess priceXaf={settings.price_xaf} />
 
         <AdminReminders expiring={stats.expiring} priceXaf={settings.price_xaf} />
+
+        <AdminActivity stats={stats} />
       </div>
     </div>
   );

@@ -319,6 +319,61 @@ money has arrived. When a provider is wired up later it calls the same
 `grantPro` with a different `provider` value, and the idempotency guarantee is
 already in place.
 
+### Payment providers
+
+NotchPay and Stripe are integrated and **not yet exercised against a live
+account** — that is the one remaining unknown, and it is stated here rather
+than discovered later. Both are inert without keys and gated a second time by
+`payments_enabled` in `/admin`, so nothing switches on by accident.
+
+The rule throughout is that the browser never says whether a payment
+succeeded:
+
+- `/api/checkout` takes the customer from the session cookie and the price from
+  settings. The browser chooses only the provider and the plan length.
+- The reference is generated server-side and stored as a `pending` payment
+  **before** the customer leaves, which is what lets a webhook arriving minutes
+  later be matched to an account without trusting the return URL.
+- Both webhook handlers verify the signature against the **raw** body, then
+  call the provider back and ask what the status really is. A leaked signing
+  key is still not enough to grant anything.
+- `/payment/return` sends a reference, never a verdict. `?status=success` is
+  something anyone can type and is never read.
+
+Idempotency is a conditional update on `status = 'pending'`. Two webhooks
+racing, or a webhook racing the customer's return, both attempt it; exactly one
+matches a row and the other stops.
+
+Thirteen checks in `npm run test:payments` cover the signature verification,
+including the two mistakes that would matter most: signing Stripe's body
+without the timestamp prefix, and failing **open** when no secret is set.
+
+### Guides, and why they exist
+
+`/blog` is not decoration. The binding constraint on this project is traffic,
+not features — a tool nobody finds earns nothing. Each guide is written to be
+the page that actually answers a real search ("réduire taille pdf", "photo 4x4
+identité"), in French, for someone on a phone with an immediate problem, and
+each one ends at a tool that does the thing.
+
+A test walks every guide, checks it renders without overflow at 320px, and
+follows every tool link to make sure it reaches a tool that is actually built —
+a guide pointing at a "coming soon" page wastes the visit that SEO paid for.
+
+### Knowing what people use
+
+`/api/events` records a tool id, an outcome, a duration and one of our own
+error keys. There is no free-form field, so a filename cannot be sent through
+it even by mistake. It is fire-and-forget over `sendBeacon`, and silent
+failure — a visitor's tool must never break, or even slow down, because an
+analytics row could not be written.
+
+This matters because the usage counters only fill up once the daily limit is
+switched on, and the whole point of leaving it off at the start is to learn
+what people want before charging for it. `/admin` shows runs, failures and the
+**median** duration per tool — a mean would be dragged out of shape by one
+large file on one slow phone.
+
 ### How the limit is enforced
 
 The browser never decides anything. Before a tool runs it calls `/api/usage`,

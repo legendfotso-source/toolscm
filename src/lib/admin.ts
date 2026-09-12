@@ -85,6 +85,13 @@ export type AdminStats = {
   topTools: { tool: string; count: number }[];
   /** Subscriptions ending within the reminder window, soonest first. */
   expiring: ExpiringRow[];
+  /**
+   * Real usage over the last 7 days, from tool_events. Unlike the usage
+   * counters, these fill up even while the daily limit is switched off — which
+   * is the whole period when you most need to know what people are using.
+   */
+  activity: { tool: string; runs: number; failures: number; medianMs: number | null }[];
+  eventsTotal: number;
 };
 
 /** The figures the dashboard shows. All computed from real rows. */
@@ -97,7 +104,7 @@ export async function getAdminStats(): Promise<AdminStats | null> {
 
   const soon = new Date(Date.now() + 4 * 86_400_000).toISOString();
 
-  const [usageToday, usageWeek, subscriptions, payments, expiring] = await Promise.all([
+  const [usageToday, usageWeek, subscriptions, payments, expiring, events] = await Promise.all([
     client
       .from("usage_logs")
       .select("subject, count, tool")
@@ -123,6 +130,11 @@ export async function getAdminStats(): Promise<AdminStats | null> {
       .lte("end_date", soon)
       .order("end_date", { ascending: true })
       .limit(50),
+    client
+      .from("tool_events")
+      .select("tool, event, meta")
+      .gte("created_at", new Date(Date.now() - 7 * 86_400_000).toISOString())
+      .limit(20_000),
   ]);
 
   const todayRows = (usageToday.data ?? []) as { subject: string; count: number }[];
@@ -135,6 +147,7 @@ export async function getAdminStats(): Promise<AdminStats | null> {
   }
 
   return {
+    ...summariseEvents((events.data ?? []) as EventRow[]),
     expiring: await withPhones(client, expiring.data ?? []),
     operationsToday: todayRows.reduce((sum, row) => sum + row.count, 0),
     operations7d: weekRows.reduce((sum, row) => sum + row.count, 0),
@@ -192,4 +205,52 @@ async function withPhones(
     proUntil: row.end_date,
     daysLeft: dayInDouala(new Date(row.end_date)) - today,
   }));
+}
+
+type EventRow = {
+  tool: string | null;
+  event: string;
+  meta: { durationMs?: unknown } | null;
+};
+
+/**
+ * Turn raw events into the three numbers worth acting on.
+ *
+ * The median rather than the mean, because one person compressing a 300-page
+ * PDF on a slow phone would drag an average far enough to hide that everyone
+ * else is fine. The median says what a typical visitor actually experiences.
+ */
+function summariseEvents(rows: EventRow[]): Pick<AdminStats, "activity" | "eventsTotal"> {
+  const byTool = new Map<string, { runs: number; failures: number; times: number[] }>();
+
+  for (const row of rows) {
+    if (!row.tool) continue;
+    const entry = byTool.get(row.tool) ?? { runs: 0, failures: 0, times: [] };
+
+    if (row.event === "success") {
+      entry.runs += 1;
+      const duration = row.meta?.durationMs;
+      if (typeof duration === "number" && duration >= 0) entry.times.push(duration);
+    } else if (row.event === "error") {
+      entry.failures += 1;
+    }
+
+    byTool.set(row.tool, entry);
+  }
+
+  const activity = [...byTool.entries()]
+    .map(([tool, entry]) => {
+      const sorted = entry.times.sort((a, b) => a - b);
+      return {
+        tool,
+        runs: entry.runs,
+        failures: entry.failures,
+        medianMs: sorted.length > 0 ? sorted[Math.floor(sorted.length / 2)] : null,
+      };
+    })
+    // Most used first, then most broken: the two questions worth asking.
+    .sort((a, b) => b.runs + b.failures - (a.runs + a.failures))
+    .slice(0, 12);
+
+  return { activity, eventsTotal: rows.length };
 }
