@@ -6,11 +6,16 @@ PDF and image tools that run entirely in the browser. Built for people on
 mid-range Android phones and limited connections — Cameroon first, then the
 rest of the world.
 
-This repository covers **Phases 1 and 2** in full — the brand, the design
-system, the tool engine and twenty tools that genuinely work — plus the
-**accounts, usage-limit and admin** part of Phase 3. Payment providers, the
-blog and analytics are not built, and nothing in the interface pretends they
-are.
+Twenty tools that genuinely work, plus accounts, a server-enforced usage
+limit, an admin dashboard, Mobile Money payments taken by hand, NotchPay and
+Stripe integrations, receipts, renewal reminders, four guides and contentless
+analytics.
+
+**What is not proven:** no payment has yet been taken through NotchPay or
+Stripe against a live account, and the two background-removal tools could not
+be exercised in the build sandbox. Both are stated plainly below rather than
+left to be discovered. Nothing in the interface pretends otherwise: the
+payment providers stay switched off until someone turns them on deliberately.
 
 ---
 
@@ -103,9 +108,13 @@ The badge on every tool page is driven by the tool's declared
 `processingMode`, not hard-coded, so it cannot drift away from the truth.
 
 - **No file is ever uploaded.** There is no upload endpoint, and no server-side
-  file handling anywhere. The only two API routes are `/api/usage` (which
-  receives a random device id and a tool name — no file, no filename) and
-  `/api/admin/settings`. You can read both in full; they are short.
+  file handling anywhere. The API routes are `/api/usage` (a random device id
+  and a tool name), `/api/events` (a tool id, an outcome, a duration and one of
+  our own error keys — no free-form field exists, so a filename cannot pass
+  through it even by mistake), `/api/checkout`, `/api/payments/verify`, the two
+  webhook receivers, and the two admin routes. Not one of them accepts a file,
+  a filename, or anything drawn from a file's contents. They are all short
+  enough to read.
 - **One third-party request, disclosed.** The two background tools download a
   ~40 MB segmentation model from `staticimgly.com` on first use. The model
   comes to the device; the photo never leaves it. This is stated on the tool
@@ -124,7 +133,8 @@ The badge on every tool page is driven by the tool's declared
 
 ```
 src/
-  app/                    routes: /, /tool/[id], /pricing, /contact, legal, sitemap, robots, manifest
+  app/                    routes: /, /tool/[id], /blog, /pricing, /account, /admin,
+                          /payment/return, /reset-password, api/*, legal, sitemap, robots
   components/
     tools/                one component per tool — the actual processing lives here
     ToolWorkbench.tsx     shared state machine: select → validate → run → result
@@ -136,6 +146,9 @@ src/
     i18n/                 locale store + dictionaries
     supabase/             config, browser / server / service-role clients
     usage/                device id, server-side counting, the useUsage hook
+    payments/             plans, term arithmetic, receipts, reminders,
+                          signature verification, the NotchPay and Stripe adapters
+    blog/                 the guides, as structured data
     entitlement.ts        "is this caller Pro?", answered from the database
   locales/                fr.json, en.json
   types/tool.ts           the tool contract
@@ -390,16 +403,32 @@ Clearing local storage resets the device counter, and we know it. The free
 limit is a speed bump, not a wall, and the product is not designed to depend on
 it being unbeatable.
 
+## What is built but unproven
+
+Written, reviewed and unit-tested, but never exercised against the real thing.
+This is the honest list, not a disclaimer:
+
+- **No payment has been taken through NotchPay or Stripe.** The signature
+  verification, idempotency and settlement logic are tested; the HTTP calls to
+  the providers are written from their published APIs and have never received
+  a real response. Take one test payment before switching `payments_enabled`
+  on. The Mobile Money flow taken by hand *is* proven end to end, because it
+  involves no API at all.
+- **The two background-removal tools were never run.** The build sandbox
+  cannot reach `staticimgly.com`, where the ~40 MB model lives. Every other
+  tool was driven in a real browser and its output bytes inspected. Test these
+  two on an actual phone before launch.
+- **Google sign-in needs OAuth credentials** in the Supabase dashboard.
+  Email and password work today.
+
 ## Still not built
 
-- NotchPay and Stripe behind a provider abstraction, with signature-verified
-  webhooks (the database side of idempotency is built and tested — a repeated
-  payment notification cannot create two subscriptions)
-- Blog, analytics reporting, AdSense
-
-The pricing page says so in plain language: payments are not live, and the
-daily limit is not enforced yet. `AdSlot` renders nothing at all until
-`NEXT_PUBLIC_ADSENSE_CLIENT` is set — no empty placeholder boxes.
+- Email beyond what Supabase Auth sends: no expiry notice by email, no
+  receipts by email. Reminders and receipts go out over WhatsApp, by hand.
+- AdSense. `AdSlot` renders nothing at all until `NEXT_PUBLIC_ADSENSE_CLIENT`
+  is set — no empty placeholder boxes, ever.
+- Automatic recurring billing. Every renewal is a fresh payment, which is
+  simply how Mobile Money works here.
 
 ---
 
