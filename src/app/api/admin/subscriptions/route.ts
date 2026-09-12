@@ -3,6 +3,7 @@ import { z } from "zod";
 import { isAdmin } from "@/lib/admin";
 import { requireAdminClient } from "@/lib/supabase/admin";
 import { TERM_DAYS, findUserIdByEmail, grantPro } from "@/lib/payments/core";
+import { receiptReference } from "@/lib/payments/receipt";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,8 @@ const Grant = z.object({
   currency: z.string().trim().length(3).toUpperCase(),
   days: z.number().int().min(1).max(3650).default(TERM_DAYS),
   note: z.string().trim().max(500).optional(),
+  /** The customer's WhatsApp number, so the receipt can be sent to them. */
+  phone: z.string().trim().max(40).optional(),
 });
 
 const Revoke = z.object({
@@ -95,7 +98,12 @@ export async function POST(request: Request) {
       amount: parsed.data.amount,
       currency: parsed.data.currency,
       days: parsed.data.days,
-      raw: { enteredBy: "admin", note: parsed.data.note ?? null, at: new Date().toISOString() },
+      raw: {
+        enteredBy: "admin",
+        note: parsed.data.note ?? null,
+        phone: parsed.data.phone ?? null,
+        at: new Date().toISOString(),
+      },
     });
 
     return NextResponse.json({
@@ -103,6 +111,20 @@ export async function POST(request: Request) {
       action: "grant",
       duplicate: result.duplicate,
       proUntil: result.proUntil,
+      // Everything the receipt needs. Built here rather than in the browser so
+      // the reference is derived from the real payment row, not from anything
+      // the admin screen happened to have in state.
+      receipt: result.paymentId
+        ? {
+            reference: receiptReference(result.paymentId),
+            email: parsed.data.email,
+            amount: parsed.data.amount,
+            currency: parsed.data.currency,
+            paidAt: result.paidAt ?? new Date().toISOString(),
+            proUntil: result.proUntil,
+            days: result.days,
+          }
+        : null,
     });
   } catch (error) {
     return NextResponse.json(

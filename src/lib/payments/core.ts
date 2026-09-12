@@ -49,6 +49,10 @@ export type GrantResult = {
   /** True when this exact transaction had already been applied. */
   duplicate: boolean;
   proUntil: string | null;
+  /** The payment row, so a receipt can be issued for it. */
+  paymentId: string | null;
+  paidAt: string | null;
+  days: number;
 };
 
 /**
@@ -74,17 +78,36 @@ export async function grantPro(input: GrantInput): Promise<GrantResult> {
       status: "succeeded",
       raw: input.raw ?? null,
     })
-    .select("id")
+    .select("id, created_at")
     .single();
 
   if (payment.error) {
     if (payment.error.code === UNIQUE_VIOLATION) {
-      // The provider re-delivered a webhook, or the user refreshed the return
-      // page. Both are normal. Report what they already have.
-      return { granted: false, duplicate: true, proUntil: await currentProUntil(client, input.userId) };
+      // The provider re-delivered a webhook, or the admin re-entered a
+      // transaction id they were not sure about. Both are normal — and both
+      // should still produce the ORIGINAL receipt, so the customer who asks
+      // for it a second time gets the same reference, not a new one.
+      const existing = await client
+        .from("payments")
+        .select("id, created_at")
+        .eq("provider", input.provider)
+        .eq("transaction_id", input.transactionId)
+        .maybeSingle();
+      const row = existing.data as { id: string; created_at: string } | null;
+
+      return {
+        granted: false,
+        duplicate: true,
+        proUntil: await currentProUntil(client, input.userId),
+        paymentId: row?.id ?? null,
+        paidAt: row?.created_at ?? null,
+        days,
+      };
     }
     throw new Error(`could not record the payment: ${payment.error.message}`);
   }
+
+  const created = payment.data as { id: string; created_at: string };
 
   const existing = await client
     .from("subscriptions")
@@ -109,7 +132,7 @@ export async function grantPro(input: GrantInput): Promise<GrantResult> {
     if (error) throw new Error(`could not extend the subscription: ${error.message}`);
     subscriptionId = row.id;
   } else {
-    const created = await client
+    const inserted = await client
       .from("subscriptions")
       .insert({
         user_id: input.userId,
@@ -121,8 +144,8 @@ export async function grantPro(input: GrantInput): Promise<GrantResult> {
       })
       .select("id")
       .single();
-    if (created.error) throw new Error(`could not create the subscription: ${created.error.message}`);
-    subscriptionId = (created.data as { id: string }).id;
+    if (inserted.error) throw new Error(`could not create the subscription: ${inserted.error.message}`);
+    subscriptionId = (inserted.data as { id: string }).id;
   }
 
   // Link the payment to what it bought, so the admin view can answer "what did
@@ -130,9 +153,16 @@ export async function grantPro(input: GrantInput): Promise<GrantResult> {
   await client
     .from("payments")
     .update({ subscription_id: subscriptionId })
-    .eq("id", (payment.data as { id: string }).id);
+    .eq("id", created.id);
 
-  return { granted: true, duplicate: false, proUntil: end.toISOString() };
+  return {
+    granted: true,
+    duplicate: false,
+    proUntil: end.toISOString(),
+    paymentId: created.id,
+    paidAt: created.created_at,
+    days,
+  };
 }
 
 async function currentProUntil(client: SupabaseClient, userId: string): Promise<string | null> {

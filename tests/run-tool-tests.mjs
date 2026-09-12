@@ -823,6 +823,32 @@ async function main() {
       return "no overflow on four tool pages";
     });
 
+    await check("the payment instructions fit a 320px screen", async () => {
+      // The Mobile Money numbers are long, monospaced and sit next to an
+      // operator badge — exactly the shape that pushes a narrow layout sideways.
+      // Someone reading this while dialling must not have to scroll to see the
+      // last digits.
+      const narrow = await browser.newContext({
+        viewport: { width: 320, height: 720 },
+        locale: "fr-FR",
+      });
+      const page = await narrow.newPage();
+      await page.goto(`${BASE}/pricing`, { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(600);
+
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      const numbers = await page.evaluate(() =>
+        (document.body.innerText.match(/\+237[\s\d]{9,}/g) ?? []).length,
+      );
+
+      await narrow.close();
+      assert(overflow <= 1, `horizontal overflow of ${overflow}px on /pricing`);
+      assert(numbers >= 2, `expected both operator numbers on the page, found ${numbers}`);
+      return `both numbers shown, no overflow at 320px`;
+    });
+
     await check("tap targets on a tool page are at least 44px tall", async () => {
       const narrow = await browser.newContext({ viewport: { width: 360, height: 780 }, locale: "fr-FR" });
       const page = await narrow.newPage();

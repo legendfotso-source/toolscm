@@ -254,30 +254,70 @@ make.
 
 ### Taking money today, without a payment provider
 
-NotchPay and Stripe are not integrated yet, and pretending otherwise would be
-the one thing this project refuses to do. What *is* built is the flow that
-actually works in Cameroon right now:
+NotchPay and Stripe are not integrated, and pretending otherwise would be the
+one thing this project refuses to do. What *is* built is the flow that actually
+works in Cameroon right now.
 
-1. Set `NEXT_PUBLIC_MOMO_NUMBER` (and optionally `NEXT_PUBLIC_MOMO_NAME` and
-   `NEXT_PUBLIC_MOMO_WHATSAPP`). The paywall and the pricing page then show
-   three plain steps instead of a dead button. While it is empty, nothing is
-   shown — an empty payment instruction is worse than none.
-2. The customer sends 2,000 FCFA to that number and forwards the confirmation
-   SMS with the email address of their account.
-3. In `/admin`, enter their email and the transaction id from the SMS. Pro is
-   activated, a real `payment` row is recorded so the revenue figure counts it,
-   and the transaction id is kept in case the payment is ever disputed.
+**The customer** sees both operators on the pricing page and in the paywall:
 
-Entering the same transaction id twice grants nothing extra — the unique index
-on `(provider, transaction_id)` sees to that — so you can re-enter one without
-checking whether you already did. `npm run test:payments` covers the term
-arithmetic, including the case that quietly costs customers days: renewing
-early must extend the existing term, not restart it from today.
+| Operator | Number | Name |
+| --- | --- | --- |
+| MTN | +237 652 11 64 11 | Gakam Sylvie |
+| Orange | +237 699 74 49 70 | Epse Simo Gakam Sylvie |
+
+Both are shown deliberately. Someone on Orange sending to an MTN number pays a
+cross-network transfer fee on top of the 2,000 FCFA, and enough of them will
+abandon the payment rather than pay it. One tap opens WhatsApp with a
+part-filled message asking for the operator, the transaction id and their
+account email.
+
+**You** open `/admin`, enter their email, the transaction id from the SMS and
+their WhatsApp number, and press Activate. Pro is granted, a real `payment` row
+is recorded so the revenue figure counts it, and a **receipt** appears with a
+one-tap *Send on WhatsApp* button:
+
+```
+*Tools.cm — Reçu de paiement*
+
+Référence : TCM-FA8W-4QG8
+Compte : client@example.com
+Montant : 2 000 XAF
+Payé le : 12 septembre 2026 à 10:30
+Durée : 30 jours
+Pro actif jusqu'au : 12 octobre 2026
+
+Votre accès Pro est activé. Merci d'utiliser Tools.cm 🙏
+Conservez cette référence : elle nous permet de retrouver votre paiement.
+```
+
+The receipt is not decoration. Someone who has just sent money to a personal
+phone number has no proof of anything until you give them some, and one message
+with a reference and an end date is the difference between a customer who
+renews and one who quietly decides the whole thing felt dodgy. The same
+receipts appear on the customer's own `/account` page, so they can find them at
+2am without messaging anyone.
+
+Details that matter, all covered by `npm run test:payments`:
+
+- The reference is derived from the payment's own id, so re-issuing a receipt
+  gives the **same** reference. It uses Crockford base32 — no I, L, O or U —
+  because these get read aloud over the phone and copied off cracked screens.
+- Times are shown in **Africa/Douala**, not UTC. A payment at 23:30 UTC would
+  otherwise be stamped with yesterday's date on the one document meant to
+  reassure the customer.
+- `652116411`, `652 11 64 11`, `+237652116411` and `00237652116411` all produce
+  the same WhatsApp link. Get this wrong and the thank-you silently goes
+  nowhere.
+- Entering the same transaction id twice grants nothing extra — the unique
+  index on `(provider, transaction_id)` sees to that — and still returns the
+  *original* receipt, so a customer asking for it again gets the same reference.
+- Renewing early **extends** the term instead of restarting it. Paying on the
+  20th while covered until the 30th must give until the 30th of next month.
 
 This is slower than an API and completely honest: nothing is granted until the
-money has arrived. When a provider is wired up later, it calls the same
-`grantPro` function with a different `provider` value, and the idempotency
-guarantee is already in place.
+money has arrived. When a provider is wired up later it calls the same
+`grantPro` with a different `provider` value, and the idempotency guarantee is
+already in place.
 
 ### How the limit is enforced
 
