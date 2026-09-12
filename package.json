@@ -15,7 +15,8 @@
     "test:supabase": "node tests/verify-supabase.mjs",
     "test:payments": "node tests/run-payment-tests.mjs",
     "test:db": "node tests/run-db-tests.mjs",
-    "test:money": "node tests/run-money-tests.mjs"
+    "test:money": "node tests/run-money-tests.mjs",
+    "test:config": "node tests/run-config-tests.mjs"
   },
   "dependencies": {
     "@imgly/background-removal": "^1.7.0",

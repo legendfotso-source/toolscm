@@ -39,5 +39,9 @@ export function isServerConfigured(): boolean {
  * USAGE_HASH_SALT in production.
  */
 export function usageHashSalt(): string {
-  return process.env.USAGE_HASH_SALT ?? "toolscm-default-salt-change-me";
+  // Trimmed and checked rather than `??`: an empty USAGE_HASH_SALT would
+  // otherwise salt every fingerprint with nothing at all, which is weaker than
+  // the fallback it was meant to replace.
+  const configured = process.env.USAGE_HASH_SALT?.trim();
+  return configured || "toolscm-default-salt-change-me";
 }

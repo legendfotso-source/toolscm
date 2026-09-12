@@ -3,16 +3,49 @@
  * environment variable so the same build works on a preview URL, a staging
  * domain and the real one.
  */
+/**
+ * The first value that is actually a value.
+ *
+ * `??` was used here originally and it broke a deployment. `??` falls back only
+ * when something is null or undefined — an environment variable that EXISTS but
+ * is empty passes straight through. Creating a variable in a hosting dashboard
+ * and leaving the box blank is an ordinary thing to do, and it produced
+ * `new URL("")` → "Invalid URL" during the build, with a stack trace pointing
+ * at layout.tsx rather than at the empty setting that caused it.
+ *
+ * Empty and whitespace-only are treated as "not set", which is what anyone
+ * filling in that box would expect.
+ */
+function firstSet(...values: (string | undefined)[]): string | undefined {
+  for (const value of values) {
+    const trimmed = value?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+/**
+ * Where this deployment lives.
+ *
+ * Tried in order: an explicit setting, Vercel's production domain, Vercel's
+ * per-deployment URL (which is what a preview build gets), and finally the real
+ * domain. The last one is a constant, so this can never be empty and the site
+ * can always be built — a missing setting must degrade to a slightly wrong
+ * canonical URL, never to a failed deployment.
+ */
 export const SITE_URL = (
-  process.env.NEXT_PUBLIC_SITE_URL ??
-  (process.env.VERCEL_PROJECT_PRODUCTION_URL
-    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-    : "https://tools.cm")
-).replace(/\/$/, "");
+  firstSet(
+    process.env.NEXT_PUBLIC_SITE_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL &&
+      `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`,
+    process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`,
+  ) ?? "https://tools.cm"
+).replace(/\/+$/, "");
 
 export const SITE_NAME = "Tools.cm";
 
-export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL ?? "contact@tools.cm";
+export const SUPPORT_EMAIL =
+  firstSet(process.env.NEXT_PUBLIC_SUPPORT_EMAIL) ?? "contact@tools.cm";
 
 /** Google AdSense client id. Absent means no ad markup is rendered at all. */
 export const ADSENSE_CLIENT = process.env.NEXT_PUBLIC_ADSENSE_CLIENT ?? "";
@@ -48,13 +81,16 @@ export type MomoAccount = {
 export const MOMO_ACCOUNTS: MomoAccount[] = [
   {
     operator: "MTN",
-    number: process.env.NEXT_PUBLIC_MTN_NUMBER ?? "+237 652 11 64 11",
-    name: process.env.NEXT_PUBLIC_MTN_NAME ?? "Gakam Sylvie",
+    // firstSet, not ??: an empty variable in a hosting dashboard would
+    // otherwise erase the number from the site instead of falling back — and
+    // the payment instructions would quietly show nothing to pay to.
+    number: firstSet(process.env.NEXT_PUBLIC_MTN_NUMBER) ?? "+237 652 11 64 11",
+    name: firstSet(process.env.NEXT_PUBLIC_MTN_NAME) ?? "Gakam Sylvie",
   },
   {
     operator: "Orange",
-    number: process.env.NEXT_PUBLIC_ORANGE_NUMBER ?? "+237 699 74 49 70",
-    name: process.env.NEXT_PUBLIC_ORANGE_NAME ?? "Epse Simo Gakam Sylvie",
+    number: firstSet(process.env.NEXT_PUBLIC_ORANGE_NUMBER) ?? "+237 699 74 49 70",
+    name: firstSet(process.env.NEXT_PUBLIC_ORANGE_NAME) ?? "Epse Simo Gakam Sylvie",
   },
 ].filter((account) => account.number.trim().length > 0) as MomoAccount[];
 
@@ -63,7 +99,7 @@ export const MOMO_ACCOUNTS: MomoAccount[] = [
  * receipts are sent from. Digits only, international format, for wa.me links.
  */
 export const SUPPORT_WHATSAPP = (
-  process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP ?? "237652116411"
+  firstSet(process.env.NEXT_PUBLIC_SUPPORT_WHATSAPP) ?? "237652116411"
 ).replace(/\D/g, "");
 
 export function isManualPaymentAvailable(): boolean {

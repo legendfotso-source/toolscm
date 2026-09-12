@@ -81,6 +81,11 @@ your visitors download. The third is a real secret: it bypasses every security
 rule in the database. Never put it in a file that reaches GitHub, and never
 paste it into a chat.
 
+**Do not create a variable and leave the box empty.** Either give it a value or
+do not add it at all. An empty setting used to fail the build with a confusing
+"Invalid URL" error; the code now falls back sensibly instead, but a blank box
+still means "I meant to fill this in and forgot".
+
 ---
 
 ## 4 — Tell Supabase where the site lives
