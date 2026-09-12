@@ -81,6 +81,17 @@ your visitors download. The third is a real secret: it bypasses every security
 rule in the database. Never put it in a file that reaches GitHub, and never
 paste it into a chat.
 
+**Vercel asks you to choose "Secret" or "Config" for each one. This matters.**
+
+- Anything starting with `NEXT_PUBLIC_` must be **Config**. Vercel refuses to
+  save a `NEXT_PUBLIC_` variable as a Secret — reasonably, since the value ends
+  up in the browser anyway — and a Secret that was created empty can never be
+  changed to Config afterwards. It has to be deleted and made again.
+- `SUPABASE_SERVICE_ROLE_KEY` is a genuine secret, but leave it as the default
+  (Config) so you can click the eye icon later and check it is actually there.
+  A "Secret" variable is write-only: nobody, including you, can ever read it
+  back, so you cannot tell a correct value from an empty one.
+
 **Do not create a variable and leave the box empty.** Either give it a value or
 do not add it at all. An empty setting used to fail the build with a confusing
 "Invalid URL" error; the code now falls back sensibly instead, but a blank box

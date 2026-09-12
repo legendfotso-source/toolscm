@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { PaymentReturn } from "@/components/PaymentReturn";
 
 export const metadata: Metadata = {
-  title: "Paiement — Tools.cm",
+  title: "Paiement",
   robots: { index: false, follow: false },
 };
 

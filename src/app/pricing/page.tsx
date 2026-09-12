@@ -9,7 +9,7 @@ import { currentUser } from "@/lib/supabase/server-client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 export const metadata: Metadata = {
-  title: "Tarifs — Tools.cm",
+  title: "Tarifs",
   description:
     "Tools.cm est gratuit au quotidien, sans compte. L'abonnement Pro à 2 000 FCFA par mois lève la limite quotidienne et retire la publicité.",
   alternates: { canonical: "/pricing" },

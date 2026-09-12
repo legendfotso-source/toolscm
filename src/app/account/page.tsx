@@ -9,7 +9,7 @@ import { type Receipt, receiptReference } from "@/lib/payments/receipt";
 import { TERM_DAYS } from "@/lib/payments/term";
 
 export const metadata: Metadata = {
-  title: "Mon compte — Tools.cm",
+  title: "Mon compte",
   robots: { index: false, follow: false },
 };
 

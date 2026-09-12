@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { LegalContent, type LegalDocument } from "@/components/LegalContent";
 
 export const metadata: Metadata = {
-  title: "Cookies — Tools.cm",
+  title: "Cookies",
   description:
     "Tools.cm n'utilise aujourd'hui aucun cookie de suivi. Cette page détaille le seul élément enregistré dans votre navigateur.",
   alternates: { canonical: "/cookies" },

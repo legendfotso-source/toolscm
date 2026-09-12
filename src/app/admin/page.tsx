@@ -5,7 +5,7 @@ import { getAdminStats, isAdmin } from "@/lib/admin";
 import { getSettings } from "@/lib/settings";
 
 export const metadata: Metadata = {
-  title: "Administration — Tools.cm",
+  title: "Administration",
   robots: { index: false, follow: false },
 };
 

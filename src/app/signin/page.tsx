@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { AuthForm } from "@/components/AuthForm";
 
 export const metadata: Metadata = {
-  title: "Connexion — Tools.cm",
+  title: "Connexion",
   description: "Connectez-vous pour gérer votre abonnement Pro Tools.cm.",
   // A sign-in page has nothing to offer a search result.
   robots: { index: false, follow: true },

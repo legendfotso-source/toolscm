@@ -3,7 +3,7 @@ import { LegalContent, type LegalDocument } from "@/components/LegalContent";
 import { SUPPORT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: "Conditions d'utilisation — Tools.cm",
+  title: "Conditions d'utilisation",
   description:
     "Les conditions d'utilisation de Tools.cm : ce que le service fait, ce qu'il ne garantit pas, et vos responsabilités.",
   alternates: { canonical: "/terms" },

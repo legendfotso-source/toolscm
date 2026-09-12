@@ -4,7 +4,7 @@ import { listPosts } from "@/lib/blog/posts";
 import { absoluteUrl } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: "Guides — Tools.cm",
+  title: "Guides",
   description:
     "Des guides courts et concrets : réduire un PDF, faire une photo d'identité, assembler un dossier. Écrits pour être lus sur un téléphone.",
   alternates: { canonical: "/blog" },

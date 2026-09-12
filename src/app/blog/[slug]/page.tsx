@@ -18,7 +18,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const post = getPost(slug);
-  if (!post) return { title: "Guide introuvable — Tools.cm" };
+  if (!post) return { title: "Guide introuvable" };
 
   return {
     title: `${post.title} — ${SITE_NAME}`,

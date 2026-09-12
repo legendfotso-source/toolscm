@@ -4,7 +4,7 @@ import { SUPPORT_EMAIL } from "@/lib/site";
 import { MODEL_HOST } from "@/lib/tools/segmentation";
 
 export const metadata: Metadata = {
-  title: "Politique de confidentialité — Tools.cm",
+  title: "Politique de confidentialité",
   description:
     "Comment Tools.cm traite vos fichiers : traitement local dans le navigateur, aucun stockage de documents, et ce qui est réellement transmis.",
   alternates: { canonical: "/privacy" },

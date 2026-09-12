@@ -191,6 +191,55 @@ await check("a WhatsApp number written with spaces and + still works", async () 
   return "punctuation stripped for the wa.me link";
 });
 
+/* ---------------- metadata that must not repeat itself ---------------- */
+
+await check("no page title repeats the site name the template already adds", async () => {
+  // The root layout sets `template: "%s — Tools.cm"`, which Next.js applies to
+  // every CHILD segment. A page that also writes "— Tools.cm" into its own
+  // title therefore ships "Connexion — Tools.cm — Tools.cm" to Google. That is
+  // what the live site did on its first successful deployment.
+  //
+  // app/page.tsx is deliberately exempt: it sits in the SAME segment as the
+  // root layout, so the template does not apply to it and it has to spell the
+  // site name out itself.
+  const { readdirSync, readFileSync, statSync } = await import("node:fs");
+
+  const appDir = join(root, "src", "app");
+  const offenders = [];
+
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/^page\.tsx$/.test(entry)) continue;
+      if (full === join(appDir, "page.tsx")) continue; // same segment as the layout
+
+      const source = readFileSync(full, "utf8");
+      for (const match of source.matchAll(/title:\s*"([^"]*)"/g)) {
+        if (match[1].includes("Tools.cm")) {
+          offenders.push(`${full.slice(root.length + 1)} → "${match[1]}"`);
+        }
+      }
+    }
+  };
+  walk(appDir);
+
+  assert.deepEqual(offenders, [], `titles that double the suffix:\n  ${offenders.join("\n  ")}`);
+  return "the template is the only place the site name is appended";
+});
+
+await check("the root layout still supplies the title template", async () => {
+  // If this ever disappears, the check above would pass while every page lost
+  // its site name entirely — a silent regression in the opposite direction.
+  const { readFileSync } = await import("node:fs");
+  const layout = readFileSync(join(root, "src", "app", "layout.tsx"), "utf8");
+  assert.match(layout, /template:\s*"%s — Tools\.cm"/, "the title template is gone");
+  return "%s — Tools.cm";
+});
+
 console.log("");
 console.log(`${results.filter(Boolean).length}/${results.length} checks passed`);
 process.exit(failures > 0 ? 1 : 0);
