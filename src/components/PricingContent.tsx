@@ -4,7 +4,9 @@ import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { PricingCard } from "./PricingCard";
 import { FAQ } from "./FAQ";
 import { Breadcrumbs } from "./Breadcrumbs";
+import { ManualPayment } from "./ManualPayment";
 import { Notice, SectionHeading } from "./ui";
+import { isManualPaymentAvailable } from "@/lib/site";
 import type { ToolFaqEntry } from "@/types/tool";
 
 const PRICING_FAQ: ToolFaqEntry[] = [
@@ -53,17 +55,27 @@ const PRICING_FAQ: ToolFaqEntry[] = [
 export function PricingContent() {
   const { t } = useLocale();
 
+  const manualPayment = isManualPaymentAvailable();
+
   return (
     <div className="container-page py-6 sm:py-8">
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-4xl" id="how-to-pay">
         <Breadcrumbs items={[{ label: t("nav.pricing") }]} />
 
         <SectionHeading title={t("pricing.title")} description={t("pricing.subtitle")} align="center" />
 
-        <Notice tone="info" className="mx-auto mb-8 max-w-2xl text-center">
-          <p className="font-semibold">{t("pricing.comingSoonTitle")}</p>
-          <p className="mt-1">{t("pricing.comingSoonText")}</p>
-        </Notice>
+        {manualPayment ? (
+          // Mobile Money is configured, so Pro can genuinely be bought today —
+          // by hand, which is slower than an API and entirely real.
+          <div className="mx-auto mb-8 max-w-2xl">
+            <ManualPayment />
+          </div>
+        ) : (
+          <Notice tone="info" className="mx-auto mb-8 max-w-2xl text-center">
+            <p className="font-semibold">{t("pricing.comingSoonTitle")}</p>
+            <p className="mt-1">{t("pricing.comingSoonText")}</p>
+          </Notice>
+        )}
 
         <div className="grid gap-5 sm:grid-cols-2">
           <PricingCard
@@ -94,9 +106,13 @@ export function PricingContent() {
               t("pricing.proFeature5"),
             ]}
             note={t("pricing.proNote")}
-            ctaLabel={t("pricing.comingSoonTitle")}
-            ctaHref="/contact"
-            ctaDisabled
+            ctaLabel={
+              manualPayment
+                ? t("pricing.proCta")
+                : t("pricing.comingSoonTitle")
+            }
+            ctaHref={manualPayment ? "#how-to-pay" : "/contact"}
+            ctaDisabled={!manualPayment}
           />
         </div>
 

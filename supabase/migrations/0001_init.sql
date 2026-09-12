@@ -329,20 +329,52 @@ as $$
      and day = (now() at time zone 'utc')::date;
 $$;
 
+-- ---------------------------------------------------------------------------
 -- These functions must only ever run from server code holding the secret key.
 --
--- NOTE: revoking from `anon` and `authenticated` by name is NOT enough, and
--- believing otherwise left a real hole in this project for a while. PostgreSQL
--- grants EXECUTE to the PUBLIC pseudo-role on every new function, and both
--- roles inherit it from there — so these three lines revoke a privilege that
--- was never granted directly and change nothing.
+-- READ THIS BEFORE CHANGING IT. The obvious spelling is wrong:
 --
--- 0002_lock_down_functions.sql revokes from PUBLIC, which is where the
--- privilege actually lives, and grants it back to service_role alone. These
--- lines are kept only so this file still reads as what was originally run.
-revoke execute on function public.consume_operation(public.usage_subject, text, text, integer) from anon, authenticated;
-revoke execute on function public.peek_usage(public.usage_subject, text) from anon, authenticated;
-revoke execute on function public.expire_subscriptions() from anon, authenticated;
+--     revoke execute on function ... from anon, authenticated;   -- DOES NOTHING
+--
+-- PostgreSQL grants EXECUTE to the PUBLIC pseudo-role on every new function.
+-- `anon` and `authenticated` inherit it from PUBLIC, so revoking from them by
+-- name removes a privilege they were never granted directly and leaves the
+-- inherited one untouched. This project shipped that mistake, and probing the
+-- live database with nothing but the public publishable key proved it: all
+-- four functions answered 200 to an anonymous caller.
+--
+-- It mattered because these functions are `security definer` — they run with
+-- the owner's rights and so ignore both the table grants below and row level
+-- security. usage_logs is unreachable from the browser, but consume_operation
+-- writes it, so any visitor could have burned another device's daily allowance
+-- or simply passed p_limit = -1 and been told "allowed" forever. The lock was
+-- on the door; the window was open.
+--
+-- So: revoke from PUBLIC, where the privilege actually lives, then grant it
+-- back to exactly one role.
+-- ---------------------------------------------------------------------------
+revoke execute on all functions in schema public from public, anon, authenticated;
+
+-- And for functions added later, so this cannot quietly come back.
+alter default privileges in schema public
+  revoke execute on functions from public;
+
+grant execute on function
+  public.consume_operation(public.usage_subject, text, text, integer)
+  to service_role;
+
+grant execute on function
+  public.peek_usage(public.usage_subject, text)
+  to service_role;
+
+grant execute on function public.expire_subscriptions()        to service_role;
+grant execute on function public.has_active_subscription(uuid) to service_role;
+
+-- handle_new_user runs from a trigger on auth.users. PostgreSQL checks EXECUTE
+-- when a trigger is created rather than when it fires, so this is
+-- belt-and-braces — but signup breaking is not worth risking to save a line.
+grant execute on function public.handle_new_user()
+  to service_role, supabase_auth_admin;
 
 -- ===========================================================================
 -- Explicit privileges

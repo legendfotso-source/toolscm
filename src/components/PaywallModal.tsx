@@ -3,7 +3,8 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
-import { Button, ButtonLink, Notice } from "./ui";
+import { ManualPayment } from "./ManualPayment";
+import { Button, ButtonLink } from "./ui";
 
 /**
  * Shown when the free allowance for the day is used up.
@@ -131,9 +132,11 @@ export function PaywallModal({
               </ButtonLink>
             </>
           ) : (
-            // Payments are not live. Saying so is better than a button that
-            // leads nowhere.
-            <Notice tone="warn">{t("paywall.unavailable")}</Notice>
+            // No payment provider is live. Rather than a button that leads
+            // nowhere, show the way money actually changes hands today — or,
+            // if no Mobile Money number is configured either, say plainly that
+            // payment is not available yet.
+            <ManualPayment compact />
           )}
 
           <Button variant="ghost" size="lg" className="w-full" onClick={onClose}>

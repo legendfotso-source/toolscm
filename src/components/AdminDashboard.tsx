@@ -5,6 +5,7 @@ import { useLocale } from "@/lib/i18n/LocaleProvider";
 import type { AdminStats } from "@/lib/admin";
 import type { AdminSettings } from "@/lib/settings";
 import { getTool } from "@/lib/tools/registry";
+import { AdminProAccess } from "./AdminProAccess";
 import { Button, Card, Notice, SectionHeading, cx } from "./ui";
 
 export function AdminDashboard({
@@ -180,6 +181,8 @@ export function AdminDashboard({
             {busy ? (fr ? "Enregistrement..." : "Saving...") : fr ? "Enregistrer" : "Save"}
           </Button>
         </Card>
+
+        <AdminProAccess priceXaf={settings.price_xaf} />
       </div>
     </div>
   );

@@ -220,9 +220,8 @@ accident.
 ### Setting it up
 
 1. Create a Supabase project (free tier is enough).
-2. Run `supabase/migrations/0001_init.sql`, then
-   `supabase/migrations/0002_lock_down_functions.sql`, in the SQL editor.
-   **0002 is not optional** — see "A hole this found" below.
+2. Run `supabase/migrations/0001_init.sql` in the SQL editor. It is written to
+   be safely re-runnable, so running it twice does no harm.
 3. Copy `.env.example` to `.env.local` and fill in the three Supabase values
    plus a random `USAGE_HASH_SALT`.
 4. `npm run test:supabase` — proves the limit really limits and that the
@@ -234,7 +233,7 @@ accident.
 
 ### A hole this found
 
-The first migration ended with `revoke execute on function … from anon,
+The migration originally ended with `revoke execute on function … from anon,
 authenticated` and looked locked down. It was not, and probing the live
 database with nothing but the public key proved it: every function answered
 `200` to an anonymous caller.
@@ -247,10 +246,38 @@ security — so a visitor could write `usage_logs` through `consume_operation`
 even though `usage_logs` itself was unreachable, burning someone else's
 allowance or handing themselves an unlimited one.
 
-`0002` revokes from `PUBLIC`, where the privilege actually lives, and grants it
-back to `service_role` alone. Four checks in `test:supabase` now assert it,
+The migration now revokes from `PUBLIC`, where the privilege actually lives,
+grants it back to `service_role` alone, and sets default privileges so a later
+function cannot reintroduce it. Four checks in `test:supabase` assert it,
 because the lesson is that a revoke you did not test is a revoke you did not
 make.
+
+### Taking money today, without a payment provider
+
+NotchPay and Stripe are not integrated yet, and pretending otherwise would be
+the one thing this project refuses to do. What *is* built is the flow that
+actually works in Cameroon right now:
+
+1. Set `NEXT_PUBLIC_MOMO_NUMBER` (and optionally `NEXT_PUBLIC_MOMO_NAME` and
+   `NEXT_PUBLIC_MOMO_WHATSAPP`). The paywall and the pricing page then show
+   three plain steps instead of a dead button. While it is empty, nothing is
+   shown — an empty payment instruction is worse than none.
+2. The customer sends 2,000 FCFA to that number and forwards the confirmation
+   SMS with the email address of their account.
+3. In `/admin`, enter their email and the transaction id from the SMS. Pro is
+   activated, a real `payment` row is recorded so the revenue figure counts it,
+   and the transaction id is kept in case the payment is ever disputed.
+
+Entering the same transaction id twice grants nothing extra — the unique index
+on `(provider, transaction_id)` sees to that — so you can re-enter one without
+checking whether you already did. `npm run test:payments` covers the term
+arithmetic, including the case that quietly costs customers days: renewing
+early must extend the existing term, not restart it from today.
+
+This is slower than an API and completely honest: nothing is granted until the
+money has arrived. When a provider is wired up later, it calls the same
+`grantPro` function with a different `provider` value, and the idempotency
+guarantee is already in place.
 
 ### How the limit is enforced
 

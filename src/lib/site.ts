@@ -20,6 +20,27 @@ export const ADSENSE_CLIENT = process.env.NEXT_PUBLIC_ADSENSE_CLIENT ?? "";
 export const PRICE_XAF = 2000;
 export const PRICE_USD = 5;
 
+/**
+ * Mobile Money, taken by hand.
+ *
+ * Before any payment provider is wired up, this is how money actually changes
+ * hands here: the customer sends the amount to an MTN or Orange number and
+ * forwards the confirmation, and an admin activates Pro from /admin against
+ * the transaction id. It is slower than an API and completely real — nothing
+ * is granted until the money has arrived.
+ *
+ * While MOMO_NUMBER is empty, none of this is shown: the paywall says plainly
+ * that payment is not available yet rather than pointing at an empty number.
+ */
+export const MOMO_NUMBER = process.env.NEXT_PUBLIC_MOMO_NUMBER ?? "";
+export const MOMO_NAME = process.env.NEXT_PUBLIC_MOMO_NAME ?? "";
+/** Digits only, international format, for the wa.me link. */
+export const MOMO_WHATSAPP = (process.env.NEXT_PUBLIC_MOMO_WHATSAPP ?? "").replace(/\D/g, "");
+
+export function isManualPaymentAvailable(): boolean {
+  return MOMO_NUMBER.trim().length > 0;
+}
+
 export function absoluteUrl(path: string): string {
   return `${SITE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
