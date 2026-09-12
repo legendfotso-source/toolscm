@@ -47,17 +47,18 @@ fetches them from a third-party CDN. Those copies are generated, not committed.
 
 ---
 
-## Deploy to Vercel
+## Deploy
 
-1. Push this repository to GitHub.
-2. On [vercel.com](https://vercel.com) → **Add New → Project** → import the repo.
-3. Accept the detected settings (Next.js, `npm run build`). No environment
-   variables are required for a first deployment.
-4. Deploy. You get a live URL in about two minutes.
-5. Once you have a domain, set `NEXT_PUBLIC_SITE_URL` to it so `sitemap.xml`,
-   `robots.txt` and the canonical tags point at the right place.
+**[DEPLOY.md](DEPLOY.md) is the step-by-step version** — GitHub, Vercel, the
+environment variables, becoming an administrator, and taking a first payment,
+written to be followed rather than interpreted.
 
-See `.env.example` for every variable, including the ones Phase 3 will need.
+The short version: push to GitHub, import the repo on
+[vercel.com](https://vercel.com), accept the detected Next.js settings, add the
+environment variables, deploy. No variables are required for the tools
+themselves to work — they only switch on accounts, limits and payments.
+
+See `.env.example` for every variable and what each one does.
 
 ---
 
