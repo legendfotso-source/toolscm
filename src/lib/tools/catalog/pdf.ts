@@ -538,8 +538,8 @@ export const pdfTools: ToolDefinition[] = [
           en: "Is the layout preserved?",
         },
         a: {
-          fr: "Partiellement. Nous restituons l'ordre de lecture et les sauts de ligne, mais pas les colonnes, les tableaux ni la typographie. Pour un rendu fidèle, il faut une conversion PDF vers Word, encore en préparation.",
-          en: "Partly. We keep the reading order and line breaks, but not columns, tables or typography. A faithful rendering needs PDF-to-Word conversion, which is still in preparation.",
+          fr: "Partiellement. Nous restituons l'ordre de lecture et les sauts de ligne, mais pas les colonnes, les tableaux ni la typographie. Si vous voulez un fichier modifiable plutôt qu'un texte brut, l'outil « PDF en Word » vous rend le même contenu dans un .docx — avec les mêmes limites de mise en page.",
+          en: "Partly. We keep the reading order and line breaks, but not columns, tables or typography. If you want an editable file rather than plain text, the \"PDF to Word\" tool hands you the same content in a .docx — with the same layout limits.",
         },
       },
     ],
@@ -556,13 +556,15 @@ export const pdfTools: ToolDefinition[] = [
   },
 
   /* ---------------------------------------------------------------
-     Listed so people can find them and see where we stand.
-     Not usable. Never faked.
+     The four that spent months listed as "coming soon".
+     They are real now — and each one says, on its own page, exactly
+     where its limits are. Shipping them without that would have been
+     the dishonest version of finally shipping them.
   --------------------------------------------------------------- */
   {
     id: "pdf-to-word",
     categories: ["pdf"],
-    status: "COMING_SOON",
+    status: "AVAILABLE",
     processingMode: "client",
     icon: "word",
     multiple: false,
@@ -577,35 +579,46 @@ export const pdfTools: ToolDefinition[] = [
     },
     h1: { fr: "Convertir un PDF en Word", en: "Convert a PDF to Word" },
     subtitle: {
-      fr: "Cet outil n'est pas encore disponible.",
-      en: "This tool is not available yet.",
+      fr: "Récupérez le texte d'un PDF dans un fichier .docx que vous pouvez modifier. La mise en page d'origine n'est pas reconstruite.",
+      en: "Recover a PDF's text into a .docx file you can edit. The original layout is not rebuilt.",
     },
     seoTitle: { fr: "PDF en Word — Tools.cm", en: "PDF to Word — Tools.cm" },
     seoDescription: {
-      fr: "La conversion PDF vers Word est en préparation sur Tools.cm.",
-      en: "PDF to Word conversion is in preparation on Tools.cm.",
+      fr: "Convertissez un PDF en document Word modifiable, gratuitement et dans votre navigateur. Le fichier ne quitte pas votre appareil.",
+      en: "Convert a PDF into an editable Word document, free and in your browser. The file never leaves your device.",
     },
     keywords: ["pdf en word", "pdf to word", "pdf en doc", "pdf docx"],
     faq: [
       {
-        q: { fr: "Pourquoi n'est-ce pas encore disponible ?", en: "Why is it not available yet?" },
+        q: { fr: "Le document sera-t-il identique au PDF ?", en: "Will the document look like the PDF?" },
         a: {
-          fr: "Une conversion PDF vers Word fidèle demande de reconstruire la mise en page, les colonnes et les tableaux. Les solutions qui tournent entièrement dans le navigateur donnent aujourd'hui des résultats trop irréguliers pour être publiées. Nous préférons ne rien proposer plutôt que de rendre un fichier inutilisable.",
-          en: "A faithful PDF-to-Word conversion means rebuilding layout, columns and tables. The approaches that run entirely in the browser are still too unreliable to publish. We would rather offer nothing than hand back an unusable file.",
+          fr: "Non, et c'est volontaire. Vous obtenez le texte dans l'ordre de lecture, page par page, dans un vrai fichier Word. Les colonnes, les tableaux, les images et les polices d'origine ne sont pas reconstruits : reproduire fidèlement une mise en page PDF dans un navigateur donne des résultats qu'il faut ensuite corriger à la main, ce qui fait perdre plus de temps que de repartir d'un texte propre.",
+          en: "No, and that is deliberate. You get the text in reading order, page by page, in a real Word file. Columns, tables, images and the original fonts are not rebuilt: faithfully reproducing a PDF layout in a browser produces results you then have to fix by hand, which costs more time than starting from clean text.",
+        },
+      },
+      {
+        q: { fr: "Et si mon PDF est un scan ?", en: "What if my PDF is a scan?" },
+        a: {
+          fr: "Un document scanné est une suite de photos : il ne contient aucun texte à récupérer, et l'outil vous le dira clairement au lieu de vous rendre un fichier vide. La reconnaissance de caractères (OCR) n'est pas encore disponible.",
+          en: "A scanned document is a series of photographs: it holds no text to recover, and the tool says so plainly rather than handing back an empty file. Character recognition (OCR) is not available yet.",
         },
       },
     ],
     about: [
       {
-        fr: "En attendant, l'outil d'extraction de texte récupère le contenu écrit d'un PDF, que vous pouvez coller dans Word et remettre en forme.",
-        en: "In the meantime, the text extraction tool recovers a PDF's written content, which you can paste into Word and format yourself.",
+        fr: "Recopier un rapport de vingt pages pour en changer trois phrases est un travail inutile. Cet outil vous rend le texte, prêt à être modifié dans Word, Google Docs ou LibreOffice.",
+        en: "Retyping a twenty-page report to change three sentences is wasted work. This tool hands you the text, ready to edit in Word, Google Docs or LibreOffice.",
+      },
+      {
+        fr: "Tout se passe dans votre navigateur. Un contrat, un relevé ou un dossier médical ne part sur aucun serveur — ce qui n'est pas le cas des convertisseurs en ligne auxquels il faut téléverser le fichier.",
+        en: "Everything happens in your browser. A contract, a statement or a medical file goes to no server — unlike the online converters you have to upload the file to.",
       },
     ],
   },
   {
     id: "word-to-pdf",
     categories: ["pdf"],
-    status: "COMING_SOON",
+    status: "AVAILABLE",
     processingMode: "client",
     icon: "word",
     multiple: false,
@@ -622,35 +635,53 @@ export const pdfTools: ToolDefinition[] = [
     },
     h1: { fr: "Convertir un document Word en PDF", en: "Convert a Word document to PDF" },
     subtitle: {
-      fr: "Cet outil n'est pas encore disponible.",
-      en: "This tool is not available yet.",
+      fr: "Transformez un fichier .docx en PDF sans installer Word. Le texte, les titres et les listes sont conservés ; la mise en page exacte ne l'est pas.",
+      en: "Turn a .docx file into a PDF without installing Word. Text, headings and lists are kept; the exact layout is not.",
     },
     seoTitle: { fr: "Word en PDF — Tools.cm", en: "Word to PDF — Tools.cm" },
     seoDescription: {
-      fr: "La conversion Word vers PDF est en préparation sur Tools.cm.",
-      en: "Word to PDF conversion is in preparation on Tools.cm.",
+      fr: "Convertissez un document Word en PDF gratuitement, directement dans votre navigateur, sans compte et sans téléversement.",
+      en: "Convert a Word document to PDF for free, right in your browser, with no account and no upload.",
     },
     keywords: ["word en pdf", "docx en pdf", "word to pdf", "doc en pdf"],
     faq: [
       {
-        q: { fr: "Que faire en attendant ?", en: "What can I do in the meantime?" },
+        q: { fr: "Le PDF sera-t-il identique à mon document Word ?", en: "Will the PDF look exactly like my Word document?" },
         a: {
-          fr: "Microsoft Word, Google Docs et LibreOffice exportent tous en PDF, gratuitement et fidèlement, y compris depuis un téléphone. C'est aujourd'hui le meilleur chemin.",
-          en: "Microsoft Word, Google Docs and LibreOffice all export to PDF, free and faithfully, including from a phone. That is the best route today.",
+          fr: "Non. Le texte, l'ordre des paragraphes, les titres, les listes, le gras et l'italique sont conservés. Les polices exactes, les tableaux, les images, les colonnes et les sauts de page d'origine ne le sont pas. Si Word, Google Docs ou LibreOffice sont accessibles, leur propre export PDF reste plus fidèle — nous le disons parce que c'est vrai.",
+          en: "No. Text, paragraph order, headings, lists, bold and italic are kept. Exact fonts, tables, images, columns and the original page breaks are not. If Word, Google Docs or LibreOffice are within reach, their own PDF export is more faithful — we say so because it is true.",
+        },
+      },
+      {
+        q: { fr: "À quoi sert cet outil, alors ?", en: "So what is this tool for?" },
+        a: {
+          fr: "Au cas le plus fréquent ici : vous recevez un .docx sur WhatsApp, vous êtes sur un téléphone ou un ordinateur sans Office, et il vous faut un PDF tout de suite pour l'envoyer ou le déposer en ligne.",
+          en: "The case that actually happens here: a .docx arrives on WhatsApp, you are on a phone or a machine with no Office, and you need a PDF right now to send or upload.",
+        },
+      },
+      {
+        q: { fr: "Et les vieux fichiers .doc ?", en: "What about old .doc files?" },
+        a: {
+          fr: "Seul le format .docx est accepté. Un ancien .doc doit d'abord être réenregistré en .docx — n'importe quel traitement de texte le fait.",
+          en: "Only the .docx format is accepted. An older .doc has to be re-saved as .docx first — any word processor does that.",
         },
       },
     ],
     about: [
       {
-        fr: "Reproduire fidèlement dans un navigateur la mise en page de Word — polices, sauts de page, tableaux — demande un moteur de rendu complet. Nous publierons cet outil quand le résultat sera réellement fidèle.",
-        en: "Faithfully reproducing Word's layout in a browser — fonts, page breaks, tables — needs a full rendering engine. We will publish this tool when the result is genuinely faithful.",
+        fr: "Un PDF ne se déforme pas d'un appareil à l'autre : c'est pour cela que les employeurs, les écoles et les administrations le demandent plutôt qu'un fichier Word.",
+        en: "A PDF does not shift from one device to another: that is why employers, schools and government offices ask for one rather than a Word file.",
+      },
+      {
+        fr: "La conversion se fait sur votre appareil. Un CV ou une lettre de motivation ne passe par aucun serveur.",
+        en: "The conversion happens on your device. A CV or a covering letter passes through no server.",
       },
     ],
   },
   {
     id: "protect-pdf",
     categories: ["pdf"],
-    status: "COMING_SOON",
+    status: "AVAILABLE",
     processingMode: "client",
     icon: "lock",
     multiple: false,
@@ -665,38 +696,62 @@ export const pdfTools: ToolDefinition[] = [
     },
     h1: { fr: "Protéger un PDF par mot de passe", en: "Password-protect a PDF" },
     subtitle: {
-      fr: "Cet outil n'est pas encore disponible.",
-      en: "This tool is not available yet.",
+      fr: "Ajoutez un mot de passe à un document. Le chiffrement est réel : sans le mot de passe, le fichier est illisible.",
+      en: "Add a password to a document. The encryption is real: without the password the file cannot be read.",
     },
     seoTitle: { fr: "Protéger un PDF — Tools.cm", en: "Protect a PDF — Tools.cm" },
     seoDescription: {
-      fr: "La protection de PDF par mot de passe est en préparation sur Tools.cm.",
-      en: "Password protection for PDFs is in preparation on Tools.cm.",
+      fr: "Ajoutez gratuitement un mot de passe à un PDF, dans votre navigateur. Le document ne quitte jamais votre appareil.",
+      en: "Add a password to a PDF for free, in your browser. The document never leaves your device.",
     },
     keywords: ["proteger pdf", "mot de passe pdf", "chiffrer pdf", "protect pdf", "encrypt pdf"],
     faq: [
       {
         q: {
-          fr: "Pourquoi ne pas le proposer tout de suite ?",
-          en: "Why not offer it right away?",
+          fr: "Si j'oublie le mot de passe, pouvez-vous récupérer le document ?",
+          en: "If I forget the password, can you recover the document?",
         },
         a: {
-          fr: "Un chiffrement mal implémenté donne un faux sentiment de sécurité, ce qui est pire que pas de protection du tout. Nous ne publierons cet outil qu'avec un chiffrement conforme et vérifié.",
-          en: "Badly implemented encryption gives a false sense of security, which is worse than none at all. We will only publish this tool with conformant, verified encryption.",
+          fr: "Non. Le chiffrement est réel et le fichier ne nous parvient jamais : nous n'en avons aucune copie et aucun moyen de l'ouvrir. Notez le mot de passe quelque part avant d'envoyer le document.",
+          en: "No. The encryption is real and the file never reaches us: we hold no copy and have no way to open it. Write the password down somewhere before you send the document.",
+        },
+      },
+      {
+        q: {
+          fr: "Un PDF protégé est-il vraiment sûr ?",
+          en: "Is a protected PDF really secure?",
+        },
+        a: {
+          fr: "Le mot de passe empêche réellement l'ouverture du document — ce n'est pas un simple affichage masqué. En revanche, une fois qu'une personne connaît le mot de passe, elle peut tout faire du fichier, y compris le réenregistrer sans protection. C'est une serrure sur la porte, pas un coffre-fort.",
+          en: "The password genuinely prevents the document from opening — this is not a cosmetic lock. But once somebody knows the password they can do anything with the file, including re-saving it unprotected. It is a lock on the door, not a safe.",
+        },
+      },
+      {
+        q: {
+          fr: "Les options « impression » et « copie » sont-elles respectées ?",
+          en: "Are the printing and copying options respected?",
+        },
+        a: {
+          fr: "Elles sont inscrites dans le document, mais de nombreux lecteurs PDF les ignorent. Traitez-les comme une indication à l'attention du lecteur, pas comme une garantie.",
+          en: "They are written into the document, but many PDF readers ignore them. Treat them as a hint to the reader, not a guarantee.",
         },
       },
     ],
     about: [
       {
-        fr: "Un PDF protégé sert surtout à limiter la lecture d'un document sensible envoyé par email. Tant que nous ne pouvons pas le faire correctement, nous préférons le dire.",
-        en: "A protected PDF is mostly used to limit who can read a sensitive document sent by email. Until we can do it properly, we prefer to say so.",
+        fr: "Un relevé bancaire, un bulletin de paie ou un dossier envoyé par email se retrouve vite transféré plus loin. Un mot de passe limite qui peut réellement l'ouvrir.",
+        en: "A bank statement, a payslip or a file sent by email is quickly forwarded further. A password limits who can actually open it.",
+      },
+      {
+        fr: "Le chiffrement se fait dans votre navigateur, sur votre appareil. Le document et le mot de passe ne transitent par aucun serveur — ce qui serait absurde pour un outil censé protéger un fichier.",
+        en: "The encryption happens in your browser, on your device. Neither the document nor the password passes through any server — which would be absurd for a tool meant to protect a file.",
       },
     ],
   },
   {
     id: "unlock-pdf",
     categories: ["pdf"],
-    status: "COMING_SOON",
+    status: "AVAILABLE",
     processingMode: "client",
     icon: "unlock",
     multiple: false,
@@ -711,31 +766,55 @@ export const pdfTools: ToolDefinition[] = [
     },
     h1: { fr: "Déverrouiller un PDF protégé", en: "Unlock a protected PDF" },
     subtitle: {
-      fr: "Cet outil n'est pas encore disponible.",
-      en: "This tool is not available yet.",
+      fr: "Retirez le mot de passe d'un document que vous pouvez déjà ouvrir. Le mot de passe est obligatoire.",
+      en: "Remove the password from a document you can already open. The password is required.",
     },
     seoTitle: { fr: "Déverrouiller un PDF — Tools.cm", en: "Unlock a PDF — Tools.cm" },
     seoDescription: {
-      fr: "Le retrait de protection d'un PDF est en préparation sur Tools.cm.",
-      en: "Removing PDF protection is in preparation on Tools.cm.",
+      fr: "Retirez la protection d'un PDF dont vous connaissez le mot de passe, gratuitement et dans votre navigateur.",
+      en: "Remove the protection from a PDF whose password you know, free and in your browser.",
     },
     keywords: ["deverrouiller pdf", "enlever mot de passe pdf", "unlock pdf", "remove pdf password"],
     faq: [
       {
         q: {
-          fr: "Pourrez-vous ouvrir un PDF dont je n'ai pas le mot de passe ?",
-          en: "Will you open a PDF whose password I do not have?",
+          fr: "Pouvez-vous ouvrir un PDF dont je n'ai pas le mot de passe ?",
+          en: "Can you open a PDF whose password I do not have?",
         },
         a: {
-          fr: "Non. Cet outil servira uniquement à retirer une protection sur un document dont vous détenez déjà le mot de passe. Contourner la protection d'un document qui ne vous appartient pas n'est pas un service que nous proposerons.",
-          en: "No. This tool will only remove protection from a document whose password you already hold. Bypassing protection on a document that is not yours is not a service we will offer.",
+          fr: "Non, et cet outil n'essaiera jamais. Il ouvre le document exactement comme le ferait un lecteur PDF, avec le mot de passe que vous tapez, puis l'enregistre sans protection. Sans ce mot de passe, le document est chiffré et il n'y a rien à tenter — ni pour vous, ni pour nous.",
+          en: "No, and this tool will never try. It opens the document exactly as a PDF reader would, with the password you type, then saves it without protection. Without that password the document is encrypted and there is nothing to attempt — for you or for us.",
+        },
+      },
+      {
+        q: {
+          fr: "Pourquoi en aurais-je besoin ?",
+          en: "Why would I need this?",
+        },
+        a: {
+          fr: "Parce qu'un relevé bancaire ou un bulletin de paie arrive souvent protégé, et que la plupart des plateformes — comme les autres outils de ce site — refusent un fichier verrouillé. C'est l'étape qui rend le reste possible.",
+          en: "Because a bank statement or a payslip often arrives locked, and most platforms — like the other tools on this site — refuse a locked file. This is the step that makes the rest possible.",
+        },
+      },
+      {
+        q: {
+          fr: "Le document déverrouillé est-il vraiment sans protection ?",
+          en: "Is the unlocked document really unprotected?",
+        },
+        a: {
+          fr: "Oui. La copie que vous téléchargez s'ouvre sans mot de passe, pour vous comme pour toute personne à qui vous l'envoyez. Le fichier d'origine, lui, reste protégé.",
+          en: "Yes. The copy you download opens with no password — for you and for anybody you send it to. The original file stays protected.",
         },
       },
     ],
     about: [
       {
-        fr: "Retirer un mot de passe est utile quand on doit déposer un relevé bancaire chiffré sur une plateforme qui refuse les fichiers protégés — à condition d'en connaître le mot de passe.",
+        fr: "Retirer un mot de passe est utile quand il faut déposer un relevé bancaire chiffré sur une plateforme qui refuse les fichiers protégés — à condition d'en connaître le mot de passe.",
         en: "Removing a password is useful when an encrypted bank statement has to be uploaded to a platform that rejects protected files — provided you know the password.",
+      },
+      {
+        fr: "Le déchiffrement se fait sur votre appareil. Ni le document ni le mot de passe ne sont envoyés quelque part.",
+        en: "The decryption happens on your device. Neither the document nor the password is sent anywhere.",
       },
     ],
   },

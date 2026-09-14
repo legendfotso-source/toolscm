@@ -146,7 +146,12 @@
     "noImageFound": "No readable image was found in this file.",
     "modelFailed": "The model could not be loaded or run on this device. This happens on older phones or ones with little memory. Try a smaller photo, or a different browser.",
     "emptyText": "Enter some text before continuing.",
-    "cropTooSmall": "The selected area is too small."
+    "cropTooSmall": "The selected area is too small.",
+    "passwordTooShort": "Choose a password of at least 4 characters.",
+    "alreadyProtected": "This PDF is already password-protected. Use “Unlock a PDF” first.",
+    "wrongPassword": "That password does not match this document. Check it and try again.",
+    "invalidDocx": "This document could not be read. Only the .docx format is accepted — older .doc files must be re-saved as .docx first.",
+    "emptyDocument": "This document contains no text to convert."
   },
   "faq": {
     "title": "Frequently asked questions"

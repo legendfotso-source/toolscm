@@ -198,3 +198,22 @@ export async function copyOrFail(
     throw new ToolError("errors.invalidPdf");
   }
 }
+
+type CryptoPdfLib = typeof import("@cantoo/pdf-lib");
+
+let cryptoPdfLibPromise: Promise<CryptoPdfLib> | null = null;
+
+/**
+ * pdf-lib, the fork that can encrypt.
+ *
+ * Two copies of pdf-lib in the repository is not an accident and not laziness.
+ * The upstream package has never shipped encryption — the pull request has sat
+ * open for years — so password protection is impossible with it. `@cantoo/pdf-lib`
+ * is a maintained fork that adds exactly that, and it is loaded ONLY by the two
+ * tools that need it. Every other tool keeps using upstream pdf-lib, so nobody
+ * compressing a PDF downloads the encryption code.
+ */
+export function loadCryptoPdfLib(): Promise<CryptoPdfLib> {
+  cryptoPdfLibPromise ??= import("@cantoo/pdf-lib");
+  return cryptoPdfLibPromise;
+}

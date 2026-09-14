@@ -146,7 +146,12 @@
     "noImageFound": "Aucune image lisible n'a été trouvée dans ce fichier.",
     "modelFailed": "Le modèle n'a pas pu être chargé ou exécuté sur cet appareil. Cela arrive sur les téléphones anciens ou avec peu de mémoire. Essayez une photo plus petite, ou un autre navigateur.",
     "emptyText": "Entrez du texte avant de continuer.",
-    "cropTooSmall": "La zone sélectionnée est trop petite."
+    "cropTooSmall": "La zone sélectionnée est trop petite.",
+    "passwordTooShort": "Choisissez un mot de passe d'au moins 4 caractères.",
+    "alreadyProtected": "Ce PDF est déjà protégé par un mot de passe. Utilisez d'abord « Déverrouiller un PDF ».",
+    "wrongPassword": "Ce mot de passe ne correspond pas à ce document. Vérifiez-le et réessayez.",
+    "invalidDocx": "Impossible de lire ce document. Seul le format .docx est accepté — les anciens fichiers .doc doivent d'abord être réenregistrés en .docx.",
+    "emptyDocument": "Ce document ne contient aucun texte à convertir."
   },
   "faq": {
     "title": "Questions fréquentes"

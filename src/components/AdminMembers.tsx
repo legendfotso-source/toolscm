@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import type { Member } from "@/lib/admin";
-import { Badge, Card, Notice } from "./ui";
+import { Badge, Button, Card, Notice } from "./ui";
 
 /**
  * Everyone who created an account.
@@ -17,10 +18,79 @@ import { Badge, Card, Notice } from "./ui";
  * subscription. Reading this list as the size of the audience would be reading
  * it wrong, and the note at the bottom says so.
  */
-export function AdminMembers({ members }: { members: Member[] }) {
+export function AdminMembers({
+  members,
+  priceXaf,
+}: {
+  members: Member[];
+  priceXaf: number;
+}) {
   const { locale } = useLocale();
+  const router = useRouter();
   const fr = locale === "fr";
   const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
+
+  /**
+   * Grant or end Pro from the row itself.
+   *
+   * No transaction id is sent. The server then derives a reference that is
+   * stable for this person for today, so a second tap extends nothing — which
+   * matters, because this button will mostly be pressed on a phone and phones
+   * produce double taps.
+   */
+  const setPro = async (member: Member, grant: boolean) => {
+    setBusy(member.email);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/admin/subscriptions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(
+          grant
+            ? { action: "grant", email: member.email, amount: priceXaf, currency: "XAF" }
+            : { action: "revoke", email: member.email },
+        ),
+      });
+      const data = (await response.json()) as { ok?: boolean; duplicate?: boolean; error?: string };
+
+      if (!response.ok || !data.ok) {
+        setMessage({
+          tone: "danger",
+          text:
+            data.error === "no_such_account"
+              ? fr
+                ? "Aucun compte avec cette adresse."
+                : "No account with that address."
+              : fr
+                ? "L'opération a échoué."
+                : "The operation failed.",
+        });
+        return;
+      }
+
+      setMessage({
+        tone: "success",
+        text: data.duplicate
+          ? fr
+            ? `${member.email} avait déjà été activé aujourd'hui — rien n'a été ajouté.`
+            : `${member.email} was already activated today — nothing was added.`
+          : grant
+            ? fr
+              ? `${member.email} est passé en Pro.`
+              : `${member.email} is now Pro.`
+            : fr
+              ? `L'accès Pro de ${member.email} a été retiré.`
+              : `Pro access for ${member.email} has been removed.`,
+      });
+      router.refresh();
+    } catch {
+      setMessage({ tone: "danger", text: fr ? "L'opération a échoué." : "The operation failed." });
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const date = (value: string) =>
     new Date(value).toLocaleDateString(fr ? "fr-FR" : "en-GB", {
@@ -82,7 +152,8 @@ export function AdminMembers({ members }: { members: Member[] }) {
                   <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink-soft">
                     <th className="pb-2 font-semibold">{fr ? "Adresse" : "Address"}</th>
                     <th className="pb-2 font-semibold">{fr ? "Inscrit le" : "Joined"}</th>
-                    <th className="pb-2 text-right font-semibold">{fr ? "Accès" : "Access"}</th>
+                    <th className="pb-2 font-semibold">{fr ? "Accès" : "Access"}</th>
+                    <th className="pb-2 text-right font-semibold">{fr ? "Action" : "Action"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -99,8 +170,26 @@ export function AdminMembers({ members }: { members: Member[] }) {
                       <td className="py-2.5 pr-3 tabular-nums text-ink-soft">
                         {date(member.joinedAt)}
                       </td>
-                      <td className="py-2.5 text-right">
+                      <td className="py-2.5 pr-3">
                         <Access member={member} fr={fr} date={date} />
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <Button
+                          variant={member.proStatus === "active" ? "danger" : "primary"}
+                          className="!min-h-9 !px-3 !text-[12.5px]"
+                          disabled={busy === member.email}
+                          onClick={() => setPro(member, member.proStatus !== "active")}
+                        >
+                          {busy === member.email
+                            ? "…"
+                            : member.proStatus === "active"
+                              ? fr
+                                ? "Retirer Pro"
+                                : "Remove Pro"
+                              : fr
+                                ? "Activer Pro"
+                                : "Make Pro"}
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -109,7 +198,19 @@ export function AdminMembers({ members }: { members: Member[] }) {
             </div>
           )}
 
+          {message ? (
+            <Notice tone={message.tone} className="mt-4">
+              {message.text}
+            </Notice>
+          ) : null}
+
           <p className="mt-4 text-[12px] leading-5 text-ink-soft">
+            {fr
+              ? `« Activer Pro » enregistre un paiement manuel de ${priceXaf.toLocaleString("fr-FR")} FCFA et donne un mois. Appuyer deux fois le même jour n'ajoute rien. Pour enregistrer l'identifiant de transaction Mobile Money, utilisez le bloc « Activer Pro » plus haut.`
+              : `"Make Pro" records a manual payment of ${priceXaf.toLocaleString("en-GB")} FCFA and grants one month. Pressing it twice on the same day adds nothing. To record the Mobile Money transaction id, use the "Activate Pro" block above.`}
+          </p>
+
+          <p className="mt-2 text-[12px] leading-5 text-ink-soft">
             {fr
               ? "Ce n'est pas le nombre de personnes qui utilisent le site : les outils fonctionnent sans compte, et la plupart des visiteurs n'apparaîtront jamais ici."
               : "This is not how many people use the site: the tools work without an account, and most visitors will never appear here."}

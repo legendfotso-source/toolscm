@@ -14,7 +14,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { PDFDocument } from "pdf-lib";
+import { createRequire } from "node:module";
 import { buildFixtures } from "./make-fixtures.mjs";
+
+const require = createRequire(import.meta.url);
 
 const here = dirname(fileURLToPath(import.meta.url));
 const DOWNLOADS = join(here, ".downloads");
@@ -215,6 +218,27 @@ async function readPdf(path) {
   }
   const document = await PDFDocument.load(bytes, { ignoreEncryption: true });
   return { bytes, pageCount: document.getPageCount(), document };
+}
+
+/**
+ * The words a reader would actually see in a finished PDF.
+ *
+ * Checking the raw bytes for a phrase only works while the file happens to be
+ * saved uncompressed — it passes for the wrong reason and, worse, fails for
+ * the wrong reason the day someone turns object streams on. Extracting with
+ * the same engine a browser uses answers the question that was actually asked.
+ */
+async function pdfText(bytes) {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const task = pdfjs.getDocument({ data: new Uint8Array(bytes), useSystemFonts: true });
+  const document = await task.promise;
+  let out = "";
+  for (let page = 1; page <= document.numPages; page += 1) {
+    const content = await (await document.getPage(page)).getTextContent();
+    out += content.items.map((item) => item.str ?? "").join("") + "\n";
+  }
+  await task.destroy();
+  return out;
 }
 
 async function readImage(path) {
@@ -760,17 +784,146 @@ async function main() {
 
     /* ---------------- Site behaviour ---------------- */
 
-    await check("a tool marked coming soon offers no working form", async () => {
-      const page = await openPage(context, "/tool/pdf-to-word");
-      await page.waitForTimeout(400);
-      const body = await page.locator("main").innerText();
-      assert(/Bientôt disponible/i.test(body), "the coming-soon state is not shown");
+    /* ---------------- The four that used to say "coming soon" ---------------- */
+
+    await check("protect-pdf — the downloaded file genuinely will not open", async () => {
+      const page = await openTool(context, "protect-pdf");
+      await addFiles(page, [join(fixtures, "document.pdf")]);
+      await fillText(page, "Mot de passe", "kribi2026");
+      const [file] = await runAndDownload(page);
+
+      const bytes = await readFile(file.path);
+      assert(bytes.subarray(0, 5).toString("latin1") === "%PDF-", "not a PDF");
+      assert(bytes.toString("latin1").includes("/Encrypt"), "no encryption dictionary");
+
+      // The decisive assertion: a reader with no password must be refused.
+      let refused = false;
+      try {
+        await PDFDocument.load(bytes);
+      } catch {
+        refused = true;
+      }
+      assert(refused, "the 'protected' file opened with no password at all");
+
+      await page.close();
+      return "refused without the password";
+    });
+
+    await check("protect-pdf — a short password is refused before anything is read", async () => {
+      const page = await openTool(context, "protect-pdf");
+      await addFiles(page, [join(fixtures, "document.pdf")]);
+      await fillText(page, "Mot de passe", "abc");
+      await page.click('[data-testid="run"]');
+      await page.waitForSelector('[data-testid="error"]', { timeout: 30_000 });
+      const message = await page.locator('[data-testid="error"]').innerText();
+      assert(/4/.test(message), `unhelpful message: ${message}`);
+      await page.close();
+      return message.replace(/\s+/g, " ").trim();
+    });
+
+    await check("unlock-pdf — removes the password from a locked document", async () => {
+      const page = await openTool(context, "unlock-pdf");
+      await addFiles(page, [join(fixtures, "protege.pdf")]);
+      await fillText(page, "Mot de passe", "kribi2026");
+      const [file] = await runAndDownload(page);
+
+      const bytes = await readFile(file.path);
+      assert(!bytes.toString("latin1").includes("/Encrypt"), "still encrypted");
+      // Loading WITHOUT ignoreEncryption is the real proof.
+      const opened = await PDFDocument.load(bytes);
+      assert(opened.getPageCount() > 0, "no pages survived");
+
+      await page.close();
+      return `${opened.getPageCount()} pages, opens freely`;
+    });
+
+    await check("unlock-pdf — the wrong password is refused, not worked around", async () => {
+      const page = await openTool(context, "unlock-pdf");
+      await addFiles(page, [join(fixtures, "protege.pdf")]);
+      await fillText(page, "Mot de passe", "mauvais-mot-de-passe");
+      await page.click('[data-testid="run"]');
+      await page.waitForSelector('[data-testid="error"]', { timeout: 30_000 });
+      const message = await page.locator('[data-testid="error"]').innerText();
       assert(
-        (await page.locator('[data-testid="file-input"]').count()) === 0,
-        "an upload zone is offered for a tool that does not work",
+        /mot de passe/i.test(message),
+        `the message does not point at the password: ${message}`,
       );
       await page.close();
-      return "shows the coming-soon state only";
+      return "no password, no document";
+    });
+
+    await check("word-to-pdf — a .docx becomes a PDF that holds the letter's words", async () => {
+      const page = await openTool(context, "word-to-pdf");
+      await addFiles(page, [join(fixtures, "lettre.docx")]);
+      const [file] = await runAndDownload(page);
+
+      const { pageCount, bytes } = await readPdf(file.path);
+      assert(pageCount >= 1, "no pages produced");
+
+      // Read the words back out of the finished PDF rather than grepping the
+      // raw bytes: this tool saves with object streams, so the text is
+      // compressed and a byte search would pass or fail for the wrong reason.
+      const text = await pdfText(bytes);
+      assert(/Demande de stage/i.test(text), `the heading is missing: "${text.slice(0, 120)}"`);
+      assert(/Monsieur le Directeur/i.test(text), "the paragraph is missing");
+      assert(/Diplôme obtenu à Douala/i.test(text), "the bullet, or its accents, did not survive");
+
+      await page.close();
+      return `${pageCount} page(s), heading, paragraph and accented bullet all present`;
+    });
+
+    await check("word-to-pdf — says plainly what it does not preserve", async () => {
+      const page = await openTool(context, "word-to-pdf");
+      await addFiles(page, [join(fixtures, "lettre.docx")]);
+      await runAndDownload(page);
+      const summary = await resultSummary(page);
+      assert(
+        /tableaux|images|polices/i.test(summary),
+        `the result does not state the limits: ${summary.slice(0, 200)}`,
+      );
+      await page.close();
+      return "the limits are on the result, not buried in an FAQ";
+    });
+
+    await check("pdf-to-word — produces a real .docx containing the PDF's text", async () => {
+      const page = await openTool(context, "pdf-to-word");
+      await addFiles(page, [join(fixtures, "document.pdf")]);
+      const [file] = await runAndDownload(page);
+
+      assert(/\.docx$/.test(file.name), `wrong extension: ${file.name}`);
+      const bytes = await readFile(file.path);
+      // A .docx is a zip. Anything else named .docx would not open in Word.
+      assert(bytes[0] === 0x50 && bytes[1] === 0x4b, "not a zip container");
+
+      const mammoth = require("mammoth");
+      const { value } = await mammoth.extractRawText({ buffer: bytes });
+      assert(value.trim().length > 20, `almost no text recovered: "${value.slice(0, 80)}"`);
+
+      await page.close();
+      return `${value.trim().split(/\s+/).length} words recovered`;
+    });
+
+    await check("pdf-to-word — refuses a scan instead of returning an empty file", async () => {
+      const page = await openTool(context, "pdf-to-word");
+      await addFiles(page, [join(fixtures, "scan.pdf")]);
+      await page.click('[data-testid="run"]');
+      await page.waitForSelector('[data-testid="error"]', { timeout: 60_000 });
+      const message = await page.locator('[data-testid="error"]').innerText();
+      assert(/scann|image/i.test(message), `unhelpful message: ${message}`);
+      await page.close();
+      return "an empty Word file would look like a working tool";
+    });
+
+    await check("no tool anywhere still advertises itself as coming soon", async () => {
+      const page = await openPage(context, "/");
+      await page.waitForTimeout(400);
+      const body = await page.locator("main").innerText();
+      assert(
+        !/Bient\u00f4t disponible/i.test(body),
+        "the homepage still lists a tool as coming soon",
+      );
+      await page.close();
+      return "every tool on the homepage is usable";
     });
 
     await check("search finds a tool by an English word in the French interface", async () => {

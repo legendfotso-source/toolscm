@@ -16,14 +16,18 @@
     "test:payments": "node tests/run-payment-tests.mjs",
     "test:db": "node tests/run-db-tests.mjs",
     "test:money": "node tests/run-money-tests.mjs",
-    "test:config": "node tests/run-config-tests.mjs"
+    "test:config": "node tests/run-config-tests.mjs",
+    "test:layout": "node tests/run-layout-tests.mjs"
   },
   "dependencies": {
+    "@cantoo/pdf-lib": "^2.11.0",
     "@imgly/background-removal": "^1.7.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
     "browser-image-compression": "^2.0.2",
+    "docx": "^9.7.1",
     "jsqr": "^1.4.0",
+    "mammoth": "^1.12.3",
     "next": "16.3.4",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.3.289",
@@ -45,5 +49,5 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   },
-  "description": "Outils PDF et image gratuits, traités dans le navigateur."
+  "description": "Outils PDF et image gratuits, trait\u00e9s dans le navigateur."
 }

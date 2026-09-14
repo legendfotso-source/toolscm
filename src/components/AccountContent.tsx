@@ -12,20 +12,39 @@ import { Breadcrumbs } from "./Breadcrumbs";
 
 export function AccountContent({
   email,
+  name,
+  avatarUrl,
+  provider,
+  memberSince,
   isPro,
   proUntil,
+  dailyLimit,
   configured,
   receipts,
 }: {
   email: string | null;
+  name: string | null;
+  avatarUrl: string | null;
+  provider: string | null;
+  memberSince: string | null;
   isPro: boolean;
   proUntil: string | null;
+  /** The free allowance, or null while the limit is switched off. */
+  dailyLimit: number | null;
   configured: boolean;
   receipts: Receipt[];
 }) {
   const { t, locale } = useLocale();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+
+  const fr = locale === "fr";
+  const longDate = (value: string) =>
+    new Intl.DateTimeFormat(fr ? "fr-FR" : "en-GB", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    }).format(new Date(value));
 
   const signOut = async () => {
     const client = browserClient();
@@ -55,10 +74,55 @@ export function AccountContent({
         ) : (
           <>
             <div className="rounded-2xl border border-line bg-white p-5">
-              <p className="text-[13px] uppercase tracking-wide text-ink-soft">
-                {t("auth.email")}
-              </p>
-              <p className="mt-1 text-[15px] font-medium text-ink">{email}</p>
+              {/* Who this is. The point of this block is that somebody can
+                  look at it and be certain the account is theirs — on a shared
+                  phone or a cybercafé machine that is not a small thing. */}
+              <div className="flex items-center gap-3.5">
+                {avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={avatarUrl}
+                    alt=""
+                    width={52}
+                    height={52}
+                    referrerPolicy="no-referrer"
+                    className="h-13 w-13 shrink-0 rounded-full object-cover"
+                    style={{ width: 52, height: 52 }}
+                  />
+                ) : (
+                  <span
+                    aria-hidden
+                    className="flex shrink-0 items-center justify-center rounded-full bg-violet-light text-[22px] font-bold text-violet-deep"
+                    style={{ width: 52, height: 52 }}
+                  >
+                    {(name || email || "?").trim().charAt(0).toUpperCase()}
+                  </span>
+                )}
+                <div className="min-w-0">
+                  {name ? (
+                    <p className="truncate text-[16px] font-bold text-ink">{name}</p>
+                  ) : null}
+                  <p className="break-all text-[14px] text-ink-soft">{email}</p>
+                  {provider ? (
+                    <p className="mt-1 text-[12.5px] text-ink-soft">
+                      {provider === "google"
+                        ? fr
+                          ? "Connecté avec Google"
+                          : "Signed in with Google"
+                        : fr
+                          ? "Connecté avec une adresse email"
+                          : "Signed in with an email address"}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
+              {memberSince ? (
+                <p className="mt-4 text-[12.5px] text-ink-soft">
+                  {fr ? "Compte créé le " : "Account created on "}
+                  {longDate(memberSince)}
+                </p>
+              ) : null}
 
               <div className="mt-5 border-t border-line pt-5">
                 <p className="text-[13px] uppercase tracking-wide text-ink-soft">
@@ -75,6 +139,23 @@ export function AccountContent({
                     {t("auth.proUntil", { date: until })}
                   </p>
                 ) : null}
+
+                {/* What the plan actually means today, in the words the
+                    pricing page uses. A plan name on its own tells somebody
+                    nothing about what they are allowed to do. */}
+                <p className="mt-2 text-[13px] leading-5 text-ink-soft">
+                  {isPro
+                    ? fr
+                      ? "Usage étendu, sans limite quotidienne, et traitement par lot sur les outils compatibles."
+                      : "Extended use, no daily limit, and batch processing on the tools that support it."
+                    : dailyLimit === null
+                      ? fr
+                        ? "Tous les outils sont actuellement illimités pour tout le monde."
+                        : "Every tool is currently unlimited for everybody."
+                      : fr
+                        ? `${dailyLimit} opérations par jour, un fichier à la fois.`
+                        : `${dailyLimit} operations a day, one file at a time.`}
+                </p>
               </div>
             </div>
 

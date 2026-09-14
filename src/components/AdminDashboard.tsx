@@ -207,7 +207,7 @@ export function AdminDashboard({
       </div>
 
       <div className="mt-6">
-        <AdminMembers members={members} />
+        <AdminMembers members={members} priceXaf={settings.price_xaf} />
       </div>
     </div>
   );

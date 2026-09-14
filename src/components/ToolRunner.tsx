@@ -31,6 +31,10 @@ const RUNNERS: Record<string, ComponentType<RunnerProps>> = {
   "rotate-pdf": dynamic(() => import("./tools/RotatePdf"), { loading: Loading }),
   "delete-pdf-pages": dynamic(() => import("./tools/DeletePdfPages"), { loading: Loading }),
   "extract-text-pdf": dynamic(() => import("./tools/ExtractTextPdf"), { loading: Loading }),
+  "protect-pdf": dynamic(() => import("./tools/ProtectPdf"), { loading: Loading }),
+  "unlock-pdf": dynamic(() => import("./tools/UnlockPdf"), { loading: Loading }),
+  "pdf-to-word": dynamic(() => import("./tools/PdfToWord"), { loading: Loading }),
+  "word-to-pdf": dynamic(() => import("./tools/WordToPdf"), { loading: Loading }),
 
   "remove-background": dynamic(() => import("./tools/RemoveBackground"), { loading: Loading }),
   "blur-background": dynamic(() => import("./tools/BlurBackground"), { loading: Loading }),

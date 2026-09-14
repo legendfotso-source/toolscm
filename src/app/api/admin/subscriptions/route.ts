@@ -26,8 +26,15 @@ export const dynamic = "force-dynamic";
 const Grant = z.object({
   action: z.literal("grant"),
   email: z.string().email(),
-  /** The mobile-money transaction id from the SMS confirmation. */
-  transactionId: z.string().trim().min(3).max(120),
+  /**
+   * The mobile-money transaction id from the SMS confirmation.
+   *
+   * Optional, because the admin screen also has a one-click "Activer Pro"
+   * button next to each member and stopping to copy a transaction id is not
+   * what "one click" means. When it is absent a reference is derived below
+   * that is stable for that person for that day — see `dailyReference`.
+   */
+  transactionId: z.string().trim().min(3).max(120).optional(),
   amount: z.number().int().min(0).max(10_000_000),
   currency: z.string().trim().length(3).toUpperCase(),
   days: z.number().int().min(1).max(3650).default(TERM_DAYS),
@@ -94,12 +101,13 @@ export async function POST(request: Request) {
     const result = await grantPro({
       userId,
       provider: "manual",
-      transactionId: parsed.data.transactionId,
+      transactionId: parsed.data.transactionId ?? dailyReference(userId),
       amount: parsed.data.amount,
       currency: parsed.data.currency,
       days: parsed.data.days,
       raw: {
         enteredBy: "admin",
+        oneClick: !parsed.data.transactionId,
         note: parsed.data.note ?? null,
         phone: parsed.data.phone ?? null,
         at: new Date().toISOString(),
@@ -132,4 +140,20 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+/**
+ * A reference for an activation made without a transaction id.
+ *
+ * Deliberately NOT random. The unique index on (provider, transaction_id) is
+ * what stops the same payment being granted twice, and a random reference
+ * would throw that protection away: a double-tap on a phone would quietly
+ * hand out two months instead of one.
+ *
+ * Keyed to the person and the day, so pressing the button twice this
+ * afternoon extends nothing and reports `duplicate`, while a genuine second
+ * payment from the same customer next month goes through normally.
+ */
+function dailyReference(userId: string): string {
+  return `admin-${new Date().toISOString().slice(0, 10)}-${userId.slice(0, 8)}`;
 }

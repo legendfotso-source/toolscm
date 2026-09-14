@@ -8,6 +8,7 @@ import { CATEGORY_ORDER } from "@/lib/tools/registry";
 import { Logo } from "./Logo";
 import { ToolSearch } from "./ToolSearch";
 import { LanguageSwitcher } from "./LanguageSwitcher";
+import { AccountMenu } from "./AccountMenu";
 import { ButtonLink, cx } from "./ui";
 
 export function Header() {
@@ -60,6 +61,7 @@ export function Header() {
             <div className="mx-1.5">
               <LanguageSwitcher />
             </div>
+            <AccountMenu />
             <ButtonLink href="/pricing" size="md" className="!min-h-10">
               {t("nav.goPro")}
             </ButtonLink>
@@ -128,6 +130,10 @@ export function Header() {
             >
               {t("nav.contact")}
             </Link>
+
+            <div className="mt-1 flex flex-col gap-1 border-t border-line pt-2">
+              <AccountMenu variant="mobile" />
+            </div>
 
             <div className="mt-2 flex items-center justify-between gap-3 border-t border-line pt-3">
               <LanguageSwitcher />

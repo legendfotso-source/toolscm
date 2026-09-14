@@ -162,6 +162,45 @@ export async function buildFixtures() {
 
   await writeFile(join(FIXTURES, "empty.pdf"), Buffer.alloc(0));
 
+  // A real Word document, for the Word-to-PDF tool. Built with the same
+  // library the tool reads back, and deliberately containing the three shapes
+  // the converter claims to keep — a heading, a paragraph, a bullet — plus
+  // French accents, which are the thing most likely to break a PDF font.
+  const { Document, Packer, Paragraph, HeadingLevel, TextRun } = require("docx");
+  await writeFile(
+    join(FIXTURES, "lettre.docx"),
+    await Packer.toBuffer(
+      new Document({
+        sections: [
+          {
+            children: [
+              new Paragraph({ text: "Demande de stage", heading: HeadingLevel.HEADING_1 }),
+              new Paragraph({
+                children: [
+                  new TextRun({ text: "Monsieur le Directeur, ", bold: true }),
+                  new TextRun(
+                    "je me permets de vous adresser ma candidature pour un stage au sein de votre service. Veuillez agréer l'expression de mes salutations distinguées.",
+                  ),
+                ],
+              }),
+              new Paragraph({ text: "Diplôme obtenu à Douala", bullet: { level: 0 } }),
+            ],
+          },
+        ],
+      }),
+    ),
+  );
+
+  // A password-protected PDF, so the unlock tool can be tested against a file
+  // it did not itself produce a moment earlier.
+  const { PDFDocument: CryptoPdf } = require("@cantoo/pdf-lib");
+  const locked = await CryptoPdf.load(await readFile(join(FIXTURES, "document.pdf")));
+  await locked.encrypt({ userPassword: "kribi2026", ownerPassword: "kribi2026" });
+  await writeFile(
+    join(FIXTURES, "protege.pdf"),
+    Buffer.from(await locked.save({ useObjectStreams: false })),
+  );
+
   return FIXTURES;
 }
 

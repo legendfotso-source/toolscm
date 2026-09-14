@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AccountContent } from "@/components/AccountContent";
 import { getEntitlement } from "@/lib/entitlement";
+import { getSettings } from "@/lib/settings";
 import { currentUser } from "@/lib/supabase/server-client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/admin";
@@ -21,8 +22,13 @@ export default async function AccountPage() {
     return (
       <AccountContent
         email={null}
+        name={null}
+        avatarUrl={null}
+        provider={null}
+        memberSince={null}
         isPro={false}
         proUntil={null}
+        dailyLimit={null}
         configured={false}
         receipts={[]}
       />
@@ -33,12 +39,25 @@ export default async function AccountPage() {
   if (!user) redirect("/signin");
 
   const { isPro, proUntil } = await getEntitlement();
+  const settings = await getSettings();
+
+  // Read straight off the session rather than from a profile row a person
+  // could have edited: this block exists so somebody can confirm at a glance
+  // that they are looking at their OWN account, and it should reflect what
+  // they actually signed in with.
+  const metadata = (user.user_metadata ?? {}) as Record<string, unknown>;
+  const text = (value: unknown) => (typeof value === "string" && value ? value : null);
 
   return (
     <AccountContent
       email={user.email ?? null}
+      name={text(metadata.full_name) ?? text(metadata.name)}
+      avatarUrl={text(metadata.avatar_url) ?? text(metadata.picture)}
+      provider={user.app_metadata?.provider ?? "email"}
+      memberSince={user.created_at ?? null}
       isPro={isPro}
       proUntil={proUntil}
+      dailyLimit={settings.limits_enabled ? settings.free_daily_limit : null}
       configured
       receipts={await receiptsFor(user.id, user.email ?? "", proUntil)}
     />
