@@ -39,13 +39,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
 
-  const { isPro } = await getEntitlement();
+  const { tier, isPro } = await getEntitlement();
 
   const verdict = await consumeOperation({
     deviceId: parsed.data.deviceId,
     tool: parsed.data.tool,
     headers: request.headers,
-    isPro,
+    tier,
   });
 
   return NextResponse.json(
@@ -55,6 +55,7 @@ export async function POST(request: Request) {
       remaining: verdict.remaining,
       reason: verdict.reason,
       isPro,
+      tier,
     },
     // 402 is the honest status for "you have used your free allowance".
     { status: verdict.allowed ? 200 : 402 },
@@ -68,13 +69,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "invalid_device" }, { status: 400 });
   }
 
-  const { isPro } = await getEntitlement();
-  const verdict = await peekUsage(deviceId, isPro);
+  const { tier, isPro } = await getEntitlement();
+  const verdict = await peekUsage(deviceId, tier);
 
   return NextResponse.json({
     used: verdict.used,
     remaining: verdict.remaining,
     reason: verdict.reason,
     isPro,
+    tier,
   });
 }

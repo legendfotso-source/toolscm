@@ -5,6 +5,7 @@ import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { ToolError, toToolError } from "@/lib/errors";
 import { track } from "@/lib/analytics";
 import { validateFile } from "@/lib/files";
+import { batchLimit, TIERS, type TierId } from "@/lib/payments/tiers";
 import { useImageObjectUrl } from "@/lib/useObjectUrl";
 import type {
   ProgressReport,
@@ -57,6 +58,7 @@ export function ToolWorkbench({
   const { t, tx } = useLocale();
 
   const [files, setFiles] = useState<File[]>([]);
+  const [batchBlocked, setBatchBlocked] = useState(false);
   const [values, setValues] = useState<OptionValues>(() => defaultsFor(options));
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState<ProgressReport>({ phase: "indeterminate" });
@@ -65,6 +67,7 @@ export function ToolWorkbench({
 
   const abortRef = useRef<AbortController | null>(null);
   const usage = useUsage();
+  const tier: TierId = usage.tier;
   const [paywallOpen, setPaywallOpen] = useState(false);
 
   // A preview of the input, so image results can be shown side by side.
@@ -79,7 +82,7 @@ export function ToolWorkbench({
       const accepted: File[] = [];
       for (const file of incoming) {
         try {
-          validateFile(file, tool);
+          validateFile(file, tool, tier);
           accepted.push(file);
         } catch (validationError) {
           setError(toToolError(validationError));
@@ -87,12 +90,22 @@ export function ToolWorkbench({
         }
       }
       if (accepted.length === 0) return;
-      setFiles((previous) =>
-        tool.multiple ? [...previous, ...accepted] : accepted.slice(0, 1),
-      );
+
+      const ceiling = batchLimit(tier, tool.multiple);
+      setFiles((previous) => {
+        const combined = tool.multiple ? [...previous, ...accepted] : accepted.slice(0, 1);
+        if (combined.length > ceiling) {
+          // The extra files are dropped rather than silently processed: a
+          // batch that half-ran is worse than one that did not start, and the
+          // user needs to know which files were not included.
+          setBatchBlocked(true);
+          return combined.slice(0, ceiling);
+        }
+        return combined;
+      });
       setPhase("ready");
     },
-    [tool],
+    [tool, tier],
   );
 
   const removeFile = (index: number) => {
@@ -121,6 +134,7 @@ export function ToolWorkbench({
 
   const reset = () => {
     setFiles([]);
+    setBatchBlocked(false);
     setResult(null);
     setError(null);
     setPhase("idle");
@@ -222,6 +236,7 @@ export function ToolWorkbench({
           onReset={reset}
           originalPreview={originalPreview}
           transparentPreview={transparentPreview}
+          tier={tier}
         />
         <div className="mt-4">
           <UsageCounter remaining={usage.remaining} isPro={usage.isPro} />
@@ -246,6 +261,19 @@ export function ToolWorkbench({
           {tool.multiple ? <UploadZone tool={tool} onFiles={addFiles} compact /> : null}
         </>
       )}
+
+      {batchBlocked ? (
+        <p
+          className="rounded-xl border border-amber-300/70 bg-amber-50 px-3 py-2 text-[13px] text-amber-900"
+          data-testid="batch-limit"
+          role="status"
+        >
+          {t(tier === "free" ? "batch.limitFree" : "batch.limitPro", {
+            max: batchLimit(tier, tool.multiple),
+            pro: TIERS.pro.batchFiles,
+          })}
+        </p>
+      ) : null}
 
       {error ? (
         <Notice tone="danger" data-testid="error">

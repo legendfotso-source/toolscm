@@ -151,7 +151,8 @@
     "alreadyProtected": "This PDF is already password-protected. Use “Unlock a PDF” first.",
     "wrongPassword": "That password does not match this document. Check it and try again.",
     "invalidDocx": "This document could not be read. Only the .docx format is accepted — older .doc files must be re-saved as .docx first.",
-    "emptyDocument": "This document contains no text to convert."
+    "emptyDocument": "This document contains no text to convert.",
+    "tooLargeFree": "This file is larger than the {size} Free plan limit. Pro accepts files twice that size."
   },
   "faq": {
     "title": "Frequently asked questions"
@@ -172,7 +173,7 @@
     "freeCta": "Start for free",
     "freeFeature1": "3 operations per day",
     "freeFeature2": "All standard tools",
-    "freeFeature3": "One file at a time",
+    "freeFeature3": "Up to 3 files at a time",
     "freeFeature4": "No account required",
     "freeFeature5": "With advertising",
     "proName": "Pro",
@@ -182,14 +183,41 @@
     "proCta": "Go Pro",
     "proBadge": "Recommended",
     "proFeature1": "Extended use, no daily limit",
-    "proFeature2": "Batch processing (supported tools)",
+    "proFeature2": "Up to 10 files at a time",
     "proFeature3": "No advertising",
     "proFeature4": "Priority access to new tools",
     "proFeature5": "Priority support",
     "proNote": "Because processing happens on your device, speed and maximum file size depend on your phone or computer.",
     "comingSoonTitle": "Payments are coming soon",
     "comingSoonText": "Pro subscriptions (Mobile Money and card) are being set up. In the meantime every published tool is free to use, with no account and no daily limit: the 3-operations-a-day limit described below is not enforced yet.",
-    "faqTitle": "Pricing questions"
+    "faqTitle": "Pricing questions",
+    "maxName": "Max",
+    "maxPrice": "5,000 FCFA",
+    "maxPriceIntl": "$12",
+    "maxPeriod": "per month",
+    "maxCta": "Go Max",
+    "maxBadge": "For businesses",
+    "maxFeature1": "Everything in Pro",
+    "maxFeature2": "Up to 50 files at a time",
+    "maxFeature3": "Files up to 4× larger",
+    "maxFeature4": "Download a whole batch as a ZIP",
+    "maxFeature5": "Commercial use permitted",
+    "maxNote": "Built for a print shop, a cybercafé or an office working through dozens of documents a day.",
+    "proFeature6": "Files up to 2× larger",
+    "compareTitle": "What each plan actually gives you",
+    "compareNote": "Every limit in this table is enforced by the server. None of them is decorative.",
+    "colFeature": "Feature",
+    "rowTools": "Every published tool",
+    "rowDaily": "Operations per day",
+    "rowBatch": "Files at a time",
+    "rowSize": "File size",
+    "rowZip": "ZIP download",
+    "rowAds": "No advertising",
+    "rowSupport": "Priority support",
+    "unlimited": "No limit",
+    "standard": "Standard",
+    "double": "×2",
+    "quadruple": "×4"
   },
   "paywall": {
     "title": "You have reached your free limit for today.",
@@ -282,5 +310,11 @@
     "notConfigured": "Accounts are not enabled on this deployment yet.",
     "working": "One moment...",
     "forgotPassword": "Forgotten your password?"
+  },
+  "batch": {
+    "limitFree": "The Free plan processes {max} files at a time. The extra files were not added — Pro processes {pro} at once.",
+    "limitPro": "Your plan processes {max} files at a time. The extra files were not added.",
+    "downloadZip": "Download all (ZIP)",
+    "zipPro": "Downloading a whole batch as a ZIP is part of Pro."
   }
 }

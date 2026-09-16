@@ -48,7 +48,7 @@ function loadCore() {
   mkdirSync(src, { recursive: true });
   mkdirSync(shim, { recursive: true });
 
-  for (const name of ["core.ts", "term.ts"]) {
+  for (const name of ["core.ts", "term.ts", "tiers.ts"]) {
     copyFileSync(join(root, "src", "lib", "payments", name), join(src, name));
   }
 
@@ -89,7 +89,7 @@ function loadCore() {
           "@supabase/supabase-js": ["shim/supabase.ts"],
         },
       },
-      files: ["src/core.ts", "src/term.ts"],
+      files: ["src/core.ts", "src/term.ts", "src/tiers.ts"],
     }),
   );
 
@@ -109,6 +109,7 @@ function loadCore() {
   for (const file of [
     "src/core.js",
     "src/term.js",
+    "src/tiers.js",
     "shim/admin.js",
     "shim/server-only.js",
     "shim/supabase.js",
@@ -135,6 +136,9 @@ function loadCore() {
 
 const out = loadCore();
 const core = await import(join(out, "src", "core.js"));
+// The tier table is plain data with no Supabase in it, so it compiles and
+// imports alongside core.ts and can be asserted on directly.
+const { TIERS, tierOf, tierPriceXaf } = await import(join(out, "src", "tiers.js"));
 const stub = await import(join(out, "shim", "admin.js"));
 
 const results = [];
@@ -472,6 +476,129 @@ await check("looking a customer up by email ignores case", async () => {
   assert.equal(await core.findUserIdByEmail("  client@example.com  "), "user-1");
   assert.equal(await core.findUserIdByEmail("nobody@example.com"), null);
   return "case and whitespace tolerant";
+});
+
+
+// ---------------------------------------------------------------------------
+// Plan tiers
+// ---------------------------------------------------------------------------
+
+await check("a Max payment grants Max, not Pro", async () => {
+  // The whole point of a third tier: the money has to buy the thing it was
+  // taken for. Recording every sale as "pro" would be a silent refund.
+  const client = world();
+  await core.grantPro({
+    userId: "user-1",
+    provider: "manual",
+    transactionId: "max-1",
+    amount: 5000,
+    currency: "XAF",
+    tier: "max",
+  });
+  assert.equal(client.store.subscriptions[0].tier, "max");
+  assert.equal(client.store.payments[0].tier, "max");
+  return "the subscription and the payment both say max";
+});
+
+await check("a payment with no tier named is Pro, not free", async () => {
+  // Every sale made before Max existed was a Pro sale. Reading an absent tier
+  // as free would take away something people already paid for.
+  const client = world();
+  await core.grantPro({
+    userId: "user-1",
+    provider: "manual",
+    transactionId: "legacy-1",
+    amount: 2000,
+    currency: "XAF",
+  });
+  assert.equal(client.store.subscriptions[0].tier, "pro");
+  return "an old-style grant still means Pro";
+});
+
+await check("upgrading mid-term RAISES the tier", async () => {
+  const client = world();
+  await core.grantPro({
+    userId: "user-1", provider: "manual", transactionId: "p1",
+    amount: 2000, currency: "XAF", tier: "pro",
+  });
+  await core.grantPro({
+    userId: "user-1", provider: "manual", transactionId: "p2",
+    amount: 5000, currency: "XAF", tier: "max",
+  });
+  assert.equal(client.store.subscriptions.length, 1);
+  assert.equal(client.store.subscriptions[0].tier, "max");
+  return "one subscription, now Max";
+});
+
+await check("renewing at a LOWER tier does not demote someone mid-term", async () => {
+  // Somebody who bought Max and then renews monthly Pro has paid for Max
+  // until a date that has not arrived. Quietly dropping them to Pro would be
+  // taking back something they own.
+  const client = world();
+  await core.grantPro({
+    userId: "user-1", provider: "manual", transactionId: "m1",
+    amount: 5000, currency: "XAF", tier: "max",
+  });
+  await core.grantPro({
+    userId: "user-1", provider: "manual", transactionId: "m2",
+    amount: 2000, currency: "XAF", tier: "pro",
+  });
+  assert.equal(client.store.subscriptions[0].tier, "max");
+  return "still Max, and the term got longer";
+});
+
+await check("the tier survives the round trip to the payment provider", async () => {
+  // The provider tells us the money arrived. It does not tell us what for —
+  // that has to be carried in our own record from before the customer left.
+  const client = world();
+  await core.createPendingPayment({
+    userId: "user-1",
+    provider: "campay",
+    reference: "tcm_max",
+    amount: 5000,
+    currency: "XAF",
+    days: 30,
+    tier: "max",
+  });
+  const settled = await core.settlePayment({ provider: "campay", reference: "tcm_max" });
+  assert.equal(settled.outcome, "granted");
+  assert.equal(client.store.subscriptions[0].tier, "max");
+  return "a webhook cannot downgrade what was bought";
+});
+
+await check("an unrecognised tier in the database is read as free, never as paid", async () => {
+  for (const value of ["premium", "PRO", "", null, undefined, "admin"]) {
+    assert.equal(tierOf(value), "free", `tierOf(${JSON.stringify(value)})`);
+  }
+  assert.equal(tierOf("pro"), "pro");
+  assert.equal(tierOf("max"), "max");
+  return "corrupt data fails closed";
+});
+
+await check("every limit on the pricing table is a limit the code reads", async () => {
+  // A pricing page that promises a number nobody enforces is a lie that takes
+  // money. These are the exact figures the comparison table renders.
+  assert.equal(TIERS.free.dailyOperations, 3);
+  assert.equal(TIERS.pro.dailyOperations, -1);
+  assert.equal(TIERS.max.dailyOperations, -1);
+  assert.equal(TIERS.free.batchFiles, 3);
+  assert.equal(TIERS.pro.batchFiles, 10);
+  assert.equal(TIERS.max.batchFiles, 50);
+  assert.equal(TIERS.free.zipDownload, false);
+  assert.equal(TIERS.pro.zipDownload, true);
+  assert.ok(TIERS.max.fileSizeMultiplier > TIERS.pro.fileSizeMultiplier);
+  assert.ok(TIERS.pro.fileSizeMultiplier > TIERS.free.fileSizeMultiplier);
+  return "free 3/day, Pro and Max uncapped, batch 3 / 10 / 50";
+});
+
+await check("Max costs more than Pro at every plan length", async () => {
+  const monthly = 2000;
+  assert.equal(tierPriceXaf(monthly, "free"), 0);
+  assert.equal(tierPriceXaf(monthly, "pro"), 2000);
+  assert.equal(tierPriceXaf(monthly, "max"), 5000);
+  // And it tracks the admin price rather than being frozen at today's figure.
+  assert.ok(tierPriceXaf(4000, "max") > tierPriceXaf(4000, "pro"));
+  return "2,000 and 5,000 FCFA, both derived from one admin setting";
 });
 
 console.log("");

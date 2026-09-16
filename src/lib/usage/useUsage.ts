@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import type { TierId } from "@/lib/payments/tiers";
 import { deviceId } from "./device";
 
 export type UsageState = {
@@ -9,11 +10,20 @@ export type UsageState = {
   remaining: number;
   used: number;
   isPro: boolean;
+  /** Which plan the SERVER says this person is on. Never set by the browser. */
+  tier: TierId;
   /** False until we have heard from the server at least once. */
   known: boolean;
 };
 
-const NO_LIMIT: Omit<UsageState, "known"> = { remaining: -1, used: 0, isPro: false };
+const NO_LIMIT: Omit<UsageState, "known"> = {
+  remaining: -1,
+  used: 0,
+  isPro: false,
+  // Free until the server says otherwise. Defaulting the other way would
+  // hand out Pro batch sizes to everyone for the first second of every page.
+  tier: "free",
+};
 
 export function useUsage() {
   // With no database configured there is nothing to ask and nothing to wait

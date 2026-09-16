@@ -1,4 +1,5 @@
 import "server-only";
+import { TIER_IDS, tierOf, type TierId } from "./tiers";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireAdminClient } from "@/lib/supabase/admin";
@@ -42,6 +43,8 @@ export type GrantInput = {
   raw?: unknown;
   /** How many days of access this payment buys. */
   days?: number;
+  /** Which plan was bought. Defaults to pro — every sale before Max was Pro. */
+  tier?: TierId;
 };
 
 export type GrantResult = {
@@ -56,6 +59,19 @@ export type GrantResult = {
 };
 
 /**
+ * The better of two tiers.
+ *
+ * Used when a payment lands on an existing subscription. An upgrade must raise
+ * the tier; a renewal at the same level must not change it; and a cheaper
+ * renewal must NOT lower it, because the customer has already paid for the
+ * higher one until a date that has not arrived yet.
+ */
+function bestTier(current: string | null | undefined, incoming: TierId): TierId {
+  const a = tierOf(current);
+  return TIER_IDS.indexOf(a) > TIER_IDS.indexOf(incoming) ? a : incoming;
+}
+
+/**
  * Record a payment and grant the access it bought.
  *
  * Order matters. The payment row is written FIRST, because that insert is what
@@ -66,12 +82,14 @@ export type GrantResult = {
 export async function grantPro(input: GrantInput): Promise<GrantResult> {
   const client = requireAdminClient();
   const days = input.days ?? TERM_DAYS;
+  const tier: TierId = input.tier ?? "pro";
 
   const payment = await client
     .from("payments")
     .insert({
       user_id: input.userId,
       provider: input.provider,
+      tier,
       amount: input.amount,
       currency: input.currency,
       transaction_id: input.transactionId,
@@ -111,14 +129,14 @@ export async function grantPro(input: GrantInput): Promise<GrantResult> {
 
   const existing = await client
     .from("subscriptions")
-    .select("id, end_date")
+    .select("id, end_date, tier")
     .eq("user_id", input.userId)
     .eq("status", "active")
     .order("end_date", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const row = existing.data as { id: string; end_date: string | null } | null;
+  const row = existing.data as { id: string; end_date: string | null; tier?: string | null } | null;
   const end = nextEndDate(row?.end_date ?? null, days);
   const nowIso = new Date().toISOString();
 
@@ -127,7 +145,16 @@ export async function grantPro(input: GrantInput): Promise<GrantResult> {
   if (row) {
     const { error } = await client
       .from("subscriptions")
-      .update({ end_date: end.toISOString(), provider: input.provider, updated_at: nowIso })
+      // An upgrade extends the same row and RAISES the tier; a renewal at the
+      // same level leaves it alone. Never lower it mid-term: somebody who
+      // bought Max and then renews monthly Pro has paid for Max until the date
+      // they paid for, and quietly demoting them would be taking it back.
+      .update({
+        end_date: end.toISOString(),
+        provider: input.provider,
+        updated_at: nowIso,
+        tier: bestTier(row?.tier, tier),
+      })
       .eq("id", row.id);
     if (error) throw new Error(`could not extend the subscription: ${error.message}`);
     subscriptionId = row.id;
@@ -141,6 +168,7 @@ export async function grantPro(input: GrantInput): Promise<GrantResult> {
         start_date: nowIso,
         end_date: end.toISOString(),
         provider_ref: input.transactionId,
+        tier,
       })
       .select("id")
       .single();
@@ -192,6 +220,7 @@ export async function createPendingPayment(input: {
   amount: number;
   currency: string;
   days: number;
+  tier?: TierId;
   meta?: Record<string, unknown>;
 }): Promise<void> {
   const client = requireAdminClient();
@@ -199,13 +228,16 @@ export async function createPendingPayment(input: {
   const { error } = await client.from("payments").insert({
     user_id: input.userId,
     provider: input.provider,
+    tier: input.tier ?? "pro",
     amount: input.amount,
     currency: input.currency,
     transaction_id: input.reference,
     status: "pending",
     // The plan length has to survive the round trip: the webhook tells us the
     // money arrived, not what it was for.
-    raw: { days: input.days, ...(input.meta ?? {}) },
+    // The plan length AND the tier have to survive the round trip: the
+    // webhook tells us the money arrived, not what it was for.
+    raw: { days: input.days, tier: input.tier ?? "pro", ...(input.meta ?? {}) },
   });
 
   if (error) throw new Error(`could not reserve the payment: ${error.message}`);
@@ -283,7 +315,12 @@ export async function settlePayment(input: {
     .maybeSingle();
 
   const row = claimed.data as
-    | { id: string; user_id: string | null; created_at: string; raw: { days?: number } | null }
+    | {
+        id: string;
+        user_id: string | null;
+        created_at: string;
+        raw: { days?: number; tier?: string } | null;
+      }
     | null;
 
   if (!row) {
@@ -303,17 +340,20 @@ export async function settlePayment(input: {
   if (!row.user_id) return { outcome: "unknown_reference" };
 
   const days = typeof row.raw?.days === "number" ? row.raw.days : TERM_DAYS;
+  // The tier was recorded when the payment was created; the provider only
+  // tells us the money arrived, never what it was for.
+  const tier = tierOf(typeof row.raw?.tier === "string" ? row.raw.tier : "pro");
 
   const subscription = await client
     .from("subscriptions")
-    .select("id, end_date")
+    .select("id, end_date, tier")
     .eq("user_id", row.user_id)
     .eq("status", "active")
     .order("end_date", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const current = subscription.data as { id: string; end_date: string | null } | null;
+  const current = subscription.data as { id: string; end_date: string | null; tier?: string | null } | null;
   const end = nextEndDate(current?.end_date ?? null, days);
   const nowIso = new Date().toISOString();
 
@@ -322,7 +362,16 @@ export async function settlePayment(input: {
   if (current) {
     await client
       .from("subscriptions")
-      .update({ end_date: end.toISOString(), provider: input.provider, updated_at: nowIso })
+      // An upgrade extends the same row and RAISES the tier; a renewal at the
+      // same level leaves it alone. Never lower it mid-term: somebody who
+      // bought Max and then renews monthly Pro has paid for Max until the date
+      // they paid for, and quietly demoting them would be taking it back.
+      .update({
+        end_date: end.toISOString(),
+        provider: input.provider,
+        updated_at: nowIso,
+        tier: bestTier(current?.tier, tier),
+      })
       .eq("id", current.id);
     subscriptionId = current.id;
   } else {
@@ -332,6 +381,7 @@ export async function settlePayment(input: {
         user_id: row.user_id,
         provider: input.provider,
         status: "active",
+        tier,
         start_date: nowIso,
         end_date: end.toISOString(),
         provider_ref: input.reference,

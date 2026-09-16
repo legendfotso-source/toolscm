@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { downloadBlob, formatBytes } from "@/lib/files";
+import { TIERS, type TierId } from "@/lib/payments/tiers";
+import { buildZip } from "@/lib/tools/zip";
 import { useObjectUrl } from "@/lib/useObjectUrl";
 import type { OutputFile, ToolResult } from "@/types/tool";
 import { Button, Notice, cx } from "./ui";
@@ -12,12 +14,15 @@ export function ResultCard({
   onReset,
   originalPreview,
   transparentPreview = false,
+  tier = "free",
 }: {
   result: ToolResult;
   onReset: () => void;
   /** Object URL of the input, so image tools can show a real before/after. */
   originalPreview?: string | null;
   transparentPreview?: boolean;
+  /** Comes from the server via useUsage — decides whether ZIP is offered. */
+  tier?: TierId;
 }) {
   const { t, tx, locale } = useLocale();
 
@@ -128,7 +133,32 @@ export function ResultCard({
       </div>
 
       {result.files.length > 1 ? (
-        <p className="text-center text-[12.5px] text-ink-soft">{t("result.downloadZipNote")}</p>
+        TIERS[tier].zipDownload ? (
+          <Button
+            variant="secondary"
+            size="md"
+            className="w-full"
+            data-testid="download-zip"
+            onClick={async () => {
+              // Built here, in the browser, from blobs that are already in
+              // memory — the files do not leave the device to become an
+              // archive any more than they did to be processed.
+              const entries = await Promise.all(
+                result.files.map(async (file) => ({
+                  name: file.name,
+                  data: new Uint8Array(await file.blob.arrayBuffer()),
+                })),
+              );
+              downloadBlob(buildZip(entries), zipName(result.files[0]?.name));
+            }}
+          >
+            {t("batch.downloadZip")}
+          </Button>
+        ) : (
+          <p className="text-center text-[12.5px] text-ink-soft">
+            {t("result.downloadZipNote")} {t("batch.zipPro")}
+          </p>
+        )
       ) : null}
     </div>
   );
@@ -313,4 +343,16 @@ function DownloadGlyph() {
       <path d="M20 16v2.5A2.5 2.5 0 0 1 17.5 21h-11A2.5 2.5 0 0 1 4 18.5V16" />
     </svg>
   );
+}
+
+/**
+ * A name for the archive, taken from the first file inside it.
+ *
+ * "tools-cm-files.zip" would be accurate and useless in a Downloads folder
+ * with forty other archives in it. The first file's stem is what the person
+ * will recognise.
+ */
+function zipName(firstName: string | undefined): string {
+  const stem = (firstName ?? "tools-cm").replace(/\.[^.]+$/, "").slice(0, 40).trim();
+  return `${stem || "tools-cm"}.zip`;
 }

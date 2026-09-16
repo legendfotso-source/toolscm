@@ -1,3 +1,4 @@
+import { fileSizeLimit, type TierId } from "@/lib/payments/tiers";
 import { ToolError } from "./errors";
 import type { ToolDefinition } from "@/types/tool";
 
@@ -35,12 +36,23 @@ export function baseName(name: string): string {
  * frequently reports an empty or generic MIME type, so relying on either one
  * alone rejects perfectly good files on exactly the devices we care about.
  */
-export function validateFile(file: File, tool: ToolDefinition): void {
+export function validateFile(
+  file: File,
+  tool: ToolDefinition,
+  tier: TierId = "free",
+): void {
   if (file.size === 0) {
     throw new ToolError("errors.emptyFile");
   }
-  if (file.size > tool.maxFileSize) {
-    throw new ToolError("errors.tooLarge", { size: formatBytes(tool.maxFileSize) });
+  // The ceiling is the tool's own figure multiplied by what the plan allows.
+  // A tier that lifts the limit for a PDF merge should not lift it by the same
+  // absolute amount for a passport photo, and the per-tool number already
+  // encodes that difference.
+  const ceiling = fileSizeLimit(tier, tool.maxFileSize);
+  if (file.size > ceiling) {
+    throw new ToolError(tier === "free" ? "errors.tooLargeFree" : "errors.tooLarge", {
+      size: formatBytes(ceiling),
+    });
   }
 
   const extension = extensionOf(file.name);

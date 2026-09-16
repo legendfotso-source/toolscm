@@ -1,16 +1,23 @@
 import "server-only";
 
+import { tierOf, type TierId } from "./payments/tiers";
 import { adminClient } from "./supabase/admin";
 import { currentUser } from "./supabase/server-client";
 
 export type Entitlement = {
+  /** Which plan the database says this person is on. The authority. */
+  tier: TierId;
+  /**
+   * Derived from `tier`, kept because a dozen call sites ask this question and
+   * "pro or better" is what most of them actually mean. Never stored.
+   */
   isPro: boolean;
   userId: string | null;
-  /** When the current Pro term ends, if there is one. */
+  /** When the current paid term ends, if there is one. */
   proUntil: string | null;
 };
 
-const FREE: Entitlement = { isPro: false, userId: null, proUntil: null };
+const FREE: Entitlement = { tier: "free", isPro: false, userId: null, proUntil: null };
 
 /**
  * Is the caller Pro?
@@ -31,7 +38,7 @@ export async function getEntitlement(): Promise<Entitlement> {
   // cron job may not have updated yet.
   const { data, error } = await client
     .from("subscriptions")
-    .select("end_date, status")
+    .select("end_date, status, tier")
     .eq("user_id", user.id)
     .eq("status", "active")
     .order("end_date", { ascending: false })
@@ -41,7 +48,7 @@ export async function getEntitlement(): Promise<Entitlement> {
     return { ...FREE, userId: user.id };
   }
 
-  const row = data[0] as { end_date: string | null; status: string };
+  const row = data[0] as { end_date: string | null; status: string; tier: string | null };
   const stillValid = !row.end_date || new Date(row.end_date) > new Date();
 
   if (!stillValid) {
@@ -55,5 +62,9 @@ export async function getEntitlement(): Promise<Entitlement> {
     return { ...FREE, userId: user.id };
   }
 
-  return { isPro: true, userId: user.id, proUntil: row.end_date };
+  // A paid row with no tier recorded is Pro: every subscription sold before
+  // Max existed was a Pro subscription, and reading those as free would take
+  // away something people paid for.
+  const tier = tierOf(row.tier ?? "pro");
+  return { tier, isPro: true, userId: user.id, proUntil: row.end_date };
 }

@@ -8,6 +8,7 @@ import { ManualPayment } from "./ManualPayment";
 import { CheckoutButtons } from "./CheckoutButtons";
 import { Card, Notice, SectionHeading } from "./ui";
 import { isManualPaymentAvailable } from "@/lib/site";
+import { TIER_IDS, TIERS } from "@/lib/payments/tiers";
 import type { Plan } from "@/lib/payments/plans";
 import type { ToolFaqEntry } from "@/types/tool";
 
@@ -106,7 +107,7 @@ export function PricingContent({
           </Notice>
         )}
 
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           <PricingCard
             name={t("pricing.freeName")}
             price={t("pricing.freePrice")}
@@ -130,6 +131,7 @@ export function PricingContent({
             features={[
               t("pricing.proFeature1"),
               t("pricing.proFeature2"),
+              t("pricing.proFeature6"),
               t("pricing.proFeature3"),
               t("pricing.proFeature4"),
               t("pricing.proFeature5"),
@@ -141,12 +143,118 @@ export function PricingContent({
             ctaHref={payable ? "#how-to-pay" : "/contact"}
             ctaDisabled={!payable}
           />
+
+          <PricingCard
+            name={t("pricing.maxName")}
+            price={t("pricing.maxPrice")}
+            secondaryPrice={`${t("pricing.maxPriceIntl")} / ${t("pricing.maxPeriod")}`}
+            period={t("pricing.maxPeriod")}
+            features={[
+              t("pricing.maxFeature1"),
+              t("pricing.maxFeature2"),
+              t("pricing.maxFeature3"),
+              t("pricing.maxFeature4"),
+              t("pricing.maxFeature5"),
+            ]}
+            note={t("pricing.maxNote")}
+            ctaLabel={payable ? t("pricing.maxCta") : t("pricing.comingSoonTitle")}
+            ctaHref={payable ? "#how-to-pay" : "/contact"}
+            ctaDisabled={!payable}
+          />
         </div>
+
+        <PlanComparison />
 
         <div className="mt-14">
           <FAQ items={PRICING_FAQ} title={t("pricing.faqTitle")} />
         </div>
       </div>
+    </div>
+  );
+}
+
+
+/**
+ * The comparison table, built from the SAME tier definitions the server
+ * enforces.
+ *
+ * Deliberately not a hand-written table: a pricing page and an enforcement
+ * table that are maintained separately will disagree, and the disagreement is
+ * always discovered by a customer who paid for a number that was never real.
+ * Every figure below is read from `TIERS`.
+ */
+function PlanComparison() {
+  const { t } = useLocale();
+
+  const rows: Array<{ label: string; values: [string, string, string] }> = [
+    { label: t("pricing.rowTools"), values: ["✓", "✓", "✓"] },
+    {
+      label: t("pricing.rowDaily"),
+      values: TIER_IDS.map((id) =>
+        TIERS[id].dailyOperations < 0
+          ? t("pricing.unlimited")
+          : String(TIERS[id].dailyOperations),
+      ) as [string, string, string],
+    },
+    {
+      label: t("pricing.rowBatch"),
+      values: TIER_IDS.map((id) => String(TIERS[id].batchFiles)) as [string, string, string],
+    },
+    {
+      label: t("pricing.rowSize"),
+      values: TIER_IDS.map((id) =>
+        TIERS[id].fileSizeMultiplier === 1
+          ? t("pricing.standard")
+          : `×${TIERS[id].fileSizeMultiplier}`,
+      ) as [string, string, string],
+    },
+    {
+      label: t("pricing.rowZip"),
+      values: TIER_IDS.map((id) => (TIERS[id].zipDownload ? "✓" : "—")) as [string, string, string],
+    },
+    { label: t("pricing.rowAds"), values: ["—", "✓", "✓"] },
+    { label: t("pricing.rowSupport"), values: ["—", "✓", "✓"] },
+  ];
+
+  return (
+    <div className="mt-12">
+      <SectionHeading title={t("pricing.compareTitle")} />
+      <Card className="mt-4 overflow-x-auto p-0">
+        <table className="w-full min-w-[420px] border-collapse text-sm">
+          <caption className="sr-only">{t("pricing.compareTitle")}</caption>
+          <thead>
+            <tr className="border-b border-line text-left">
+              <th scope="col" className="px-4 py-3 font-semibold">
+                {t("pricing.colFeature")}
+              </th>
+              <th scope="col" className="px-4 py-3 text-center font-semibold">
+                {t("pricing.freeName")}
+              </th>
+              <th scope="col" className="px-4 py-3 text-center font-semibold text-violet-deep">
+                {t("pricing.proName")}
+              </th>
+              <th scope="col" className="px-4 py-3 text-center font-semibold">
+                {t("pricing.maxName")}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label} className="border-b border-line/60 last:border-0">
+                <th scope="row" className="px-4 py-3 text-left font-normal text-ink-soft">
+                  {row.label}
+                </th>
+                {row.values.map((value, index) => (
+                  <td key={index} className="px-4 py-3 text-center tabular-nums">
+                    {value}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+      <p className="mt-3 text-center text-[12.5px] text-ink-soft">{t("pricing.compareNote")}</p>
     </div>
   );
 }

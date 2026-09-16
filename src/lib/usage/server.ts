@@ -2,6 +2,7 @@ import "server-only";
 
 import { adminClient } from "@/lib/supabase/admin";
 import { getSettings } from "@/lib/settings";
+import { TIERS, type TierId } from "@/lib/payments/tiers";
 import { usageHashSalt } from "@/lib/supabase/config";
 import { dailyFingerprint, stableFingerprint, utcDay } from "./hash";
 
@@ -78,19 +79,24 @@ export async function consumeOperation({
   deviceId,
   tool,
   headers,
-  isPro,
+  tier,
 }: {
   deviceId: string;
   tool: string;
   headers: Headers;
-  isPro: boolean;
+  tier: TierId;
 }): Promise<UsageVerdict> {
   const client = adminClient();
   if (!client) return UNLIMITED;
 
   const settings = await getSettings();
   if (!settings.limits_enabled) return UNLIMITED;
-  if (isPro) return { ...UNLIMITED, reason: "unlimited" };
+
+  // The tier decides the allowance, and -1 means there is none. Reading it
+  // from the tier table rather than from `isPro` is what lets Max exist
+  // without a second branch here.
+  const allowance = TIERS[tier].dailyOperations;
+  if (allowance < 0) return { ...UNLIMITED, reason: "unlimited" };
 
   // The loose network ceiling is checked first and separately. It is set high
   // enough that a shared mobile gateway never trips it in normal use — it is
@@ -113,7 +119,9 @@ export async function consumeOperation({
     p_subject_type: "device",
     p_subject: deviceId,
     p_tool: tool,
-    p_limit: settings.free_daily_limit,
+    // The admin setting is the FREE allowance; a paid tier with a finite
+    // allowance would use its own. Today only free is finite.
+    p_limit: tier === "free" ? settings.free_daily_limit : allowance,
   });
 
   if (device.error) {
@@ -136,13 +144,20 @@ export async function consumeOperation({
 }
 
 /** Read today's usage without consuming anything. */
-export async function peekUsage(deviceId: string, isPro: boolean): Promise<UsageVerdict> {
+export async function peekUsage(deviceId: string, tier: TierId): Promise<UsageVerdict> {
   const client = adminClient();
   if (!client) return UNLIMITED;
 
   const settings = await getSettings();
   if (!settings.limits_enabled) return UNLIMITED;
-  if (isPro) return { ...UNLIMITED, reason: "unlimited" };
+
+  const allowance =
+    TIERS[tier].dailyOperations < 0
+      ? -1
+      : tier === "free"
+        ? settings.free_daily_limit
+        : TIERS[tier].dailyOperations;
+  if (allowance < 0) return { ...UNLIMITED, reason: "unlimited" };
 
   const { data, error } = await client.rpc("peek_usage", {
     p_subject_type: "device",
@@ -153,10 +168,10 @@ export async function peekUsage(deviceId: string, isPro: boolean): Promise<Usage
 
   const used = typeof data === "number" ? data : 0;
   return {
-    allowed: used < settings.free_daily_limit,
+    allowed: used < allowance,
     used,
-    remaining: Math.max(settings.free_daily_limit - used, 0),
-    reason: used < settings.free_daily_limit ? "within_limit" : "limit_reached",
+    remaining: Math.max(allowance - used, 0),
+    reason: used < allowance ? "within_limit" : "limit_reached",
   };
 }
 

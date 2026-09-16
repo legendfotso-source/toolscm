@@ -4,7 +4,9 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { type Plan, type PlanId, planName } from "@/lib/payments/plans";
-import { Button, Notice } from "./ui";
+import { TIERS, tierName, type TierId } from "@/lib/payments/tiers";
+import { track } from "@/lib/analytics";
+import { Button, Notice, cx } from "./ui";
 
 /**
  * Choose a length, choose a way to pay, go.
@@ -32,6 +34,7 @@ export function CheckoutButtons({
 
   const router = useRouter();
   const [planId, setPlanId] = useState<PlanId>("monthly");
+  const [tier, setTier] = useState<TierId>("pro");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,11 +43,14 @@ export function CheckoutButtons({
   const start = async (provider: "notchpay" | "campay" | "stripe") => {
     setBusy(provider);
     setError(null);
+    // Contentless, like every other event: which plan and which provider, so
+    // we can see where checkout is abandoned. No amount, no identity.
+    track("checkout", "start", { tier, plan: planId, provider });
     try {
       const response = await fetch("/api/checkout", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ provider, plan: planId }),
+        body: JSON.stringify({ provider, plan: planId, tier }),
       });
       const data = (await response.json()) as { url?: string; error?: string };
 
@@ -91,6 +97,37 @@ export function CheckoutButtons({
       <p className="text-[14px] font-semibold text-ink">
         {fr ? "Choisissez une durée" : "Choose a length"}
       </p>
+
+      <div
+        className="mt-2.5 grid gap-2 sm:grid-cols-2"
+        role="group"
+        aria-label={fr ? "Formule" : "Plan"}
+      >
+        {(["pro", "max"] as TierId[]).map((id) => {
+          const active = id === tier;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTier(id)}
+              aria-pressed={active}
+              className={cx(
+                "rounded-xl border px-3 py-2 text-left transition",
+                active
+                  ? "border-violet-mid bg-violet-soft/40 ring-1 ring-violet-mid"
+                  : "border-line bg-white hover:border-violet-mid/60",
+              )}
+            >
+              <span className="block text-sm font-semibold">{tierName(id, fr)}</span>
+              <span className="block text-[12.5px] text-ink-soft">
+                {fr
+                  ? `${TIERS[id].batchFiles} fichiers à la fois`
+                  : `${TIERS[id].batchFiles} files at a time`}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
         {plansAvailable.map((plan) => {

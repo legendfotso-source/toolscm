@@ -19,10 +19,26 @@ import { isSupabaseConfigured } from "@/lib/supabase/config";
  */
 export type ToolEvent = "start" | "success" | "error";
 
+/**
+ * The commerce funnel, kept to the same rules as the tool events.
+ *
+ * Which plan and which provider were chosen — never an amount, never an email,
+ * never a transaction id. Those live in the payments table where they belong
+ * and where they are protected; putting them here would mean the analytics
+ * endpoint, which takes anonymous writes, could be used to read them back.
+ */
+export type CommerceExtra = {
+  tier?: string;
+  plan?: string;
+  provider?: string;
+  /** Where the upgrade prompt was shown — "limit", "batch", "pricing". */
+  from?: string;
+};
+
 export function track(
   tool: string,
   event: ToolEvent,
-  extra?: { durationMs?: number; errorKey?: string },
+  extra?: { durationMs?: number; errorKey?: string } & CommerceExtra,
 ): void {
   // Nothing to send to, so do not even build the request.
   if (!isSupabaseConfigured()) return;

@@ -151,7 +151,8 @@
     "alreadyProtected": "Ce PDF est déjà protégé par un mot de passe. Utilisez d'abord « Déverrouiller un PDF ».",
     "wrongPassword": "Ce mot de passe ne correspond pas à ce document. Vérifiez-le et réessayez.",
     "invalidDocx": "Impossible de lire ce document. Seul le format .docx est accepté — les anciens fichiers .doc doivent d'abord être réenregistrés en .docx.",
-    "emptyDocument": "Ce document ne contient aucun texte à convertir."
+    "emptyDocument": "Ce document ne contient aucun texte à convertir.",
+    "tooLargeFree": "Ce fichier dépasse la limite de {size} du plan Gratuit. Le plan Pro accepte des fichiers deux fois plus grands."
   },
   "faq": {
     "title": "Questions fréquentes"
@@ -172,7 +173,7 @@
     "freeCta": "Commencer gratuitement",
     "freeFeature1": "3 opérations par jour",
     "freeFeature2": "Tous les outils standards",
-    "freeFeature3": "Un fichier à la fois",
+    "freeFeature3": "Jusqu'à 3 fichiers à la fois",
     "freeFeature4": "Aucun compte requis",
     "freeFeature5": "Avec publicité",
     "proName": "Pro",
@@ -182,14 +183,41 @@
     "proCta": "Devenir Pro",
     "proBadge": "Recommandé",
     "proFeature1": "Usage étendu, sans limite quotidienne",
-    "proFeature2": "Traitement par lot (outils compatibles)",
+    "proFeature2": "Jusqu'à 10 fichiers à la fois",
     "proFeature3": "Sans publicité",
     "proFeature4": "Accès prioritaire aux nouveaux outils",
     "proFeature5": "Support prioritaire",
     "proNote": "Le traitement se faisant sur votre appareil, la vitesse et la taille maximale des fichiers dépendent de votre téléphone ou ordinateur.",
     "comingSoonTitle": "Les paiements arrivent bientôt",
     "comingSoonText": "L'abonnement Pro (Mobile Money et carte bancaire) est en cours de mise en place. En attendant, tous les outils publiés sont utilisables gratuitement, sans compte et sans limite quotidienne : la limite de 3 opérations par jour décrite ci-dessous n'est pas encore appliquée.",
-    "faqTitle": "Questions sur les tarifs"
+    "faqTitle": "Questions sur les tarifs",
+    "maxName": "Max",
+    "maxPrice": "5 000 FCFA",
+    "maxPriceIntl": "12 $",
+    "maxPeriod": "par mois",
+    "maxCta": "Passer à Max",
+    "maxBadge": "Pour les pros",
+    "maxFeature1": "Tout ce que contient Pro",
+    "maxFeature2": "Jusqu'à 50 fichiers à la fois",
+    "maxFeature3": "Fichiers jusqu'à 4× plus lourds",
+    "maxFeature4": "Téléchargement groupé en ZIP",
+    "maxFeature5": "Usage commercial autorisé",
+    "maxNote": "Pensé pour une imprimerie, un cybercafé ou un cabinet qui traite des dizaines de documents par jour.",
+    "proFeature6": "Fichiers jusqu'à 2× plus lourds",
+    "compareTitle": "Ce que chaque plan donne vraiment",
+    "compareNote": "Chaque limite de ce tableau est appliquée par le serveur. Aucune n'est décorative.",
+    "colFeature": "Fonction",
+    "rowTools": "Tous les outils publiés",
+    "rowDaily": "Opérations par jour",
+    "rowBatch": "Fichiers à la fois",
+    "rowSize": "Taille de fichier",
+    "rowZip": "Téléchargement ZIP",
+    "rowAds": "Sans publicité",
+    "rowSupport": "Support prioritaire",
+    "unlimited": "Sans limite",
+    "standard": "Standard",
+    "double": "×2",
+    "quadruple": "×4"
   },
   "paywall": {
     "title": "Vous avez atteint votre limite gratuite aujourd'hui.",
@@ -282,5 +310,11 @@
     "notConfigured": "Les comptes ne sont pas encore activés sur ce déploiement.",
     "working": "Un instant...",
     "forgotPassword": "Mot de passe oublié ?"
+  },
+  "batch": {
+    "limitFree": "Le plan Gratuit traite {max} fichiers à la fois. Les fichiers en trop n'ont pas été ajoutés — passez à Pro pour en traiter {pro} d'un coup.",
+    "limitPro": "Votre plan traite {max} fichiers à la fois. Les fichiers en trop n'ont pas été ajoutés.",
+    "downloadZip": "Tout télécharger (ZIP)",
+    "zipPro": "Le téléchargement groupé en ZIP fait partie du plan Pro."
   }
 }

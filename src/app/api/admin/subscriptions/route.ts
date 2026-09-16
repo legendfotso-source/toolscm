@@ -38,6 +38,8 @@ const Grant = z.object({
   amount: z.number().int().min(0).max(10_000_000),
   currency: z.string().trim().length(3).toUpperCase(),
   days: z.number().int().min(1).max(3650).default(TERM_DAYS),
+  /** Which plan the admin is activating. Defaults to Pro. */
+  tier: z.enum(["pro", "max"]).default("pro"),
   note: z.string().trim().max(500).optional(),
   /** The customer's WhatsApp number, so the receipt can be sent to them. */
   phone: z.string().trim().max(40).optional(),
@@ -105,6 +107,7 @@ export async function POST(request: Request) {
       amount: parsed.data.amount,
       currency: parsed.data.currency,
       days: parsed.data.days,
+      tier: parsed.data.tier,
       raw: {
         enteredBy: "admin",
         oneClick: !parsed.data.transactionId,
