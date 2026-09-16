@@ -23,9 +23,11 @@ let sequence = 0;
 const nextId = () => `id-${(sequence += 1)}`;
 
 class Query {
-  constructor(store, table) {
+  constructor(store, table, missingColumns = []) {
     this.store = store;
     this.table = table;
+    this.missingColumns = missingColumns;
+    this.columns = "*";
     this.filters = [];
     this.op = "select";
     this.payload = null;
@@ -71,8 +73,9 @@ class Query {
   }
 
   /* ---- shaping ---- */
-  select() {
+  select(columns = "*") {
     if (this.op === "select") this.op = "select";
+    this.columns = columns;
     this.wantsRows = true;
     return this;
   }
@@ -122,7 +125,35 @@ class Query {
     return rows.filter((row) => this.filters.every((test) => test(row)));
   }
 
+  /**
+   * A column the database does not have yet.
+   *
+   * Used to reproduce the window between pushing code that knows about `tier`
+   * and running the migration that adds it. PostgreSQL answers 42703 to both a
+   * SELECT and a write that names a column it has never heard of.
+   */
+  missingColumnError() {
+    if (this.missingColumns.length === 0) return null;
+
+    const named =
+      this.op === "select"
+        ? String(this.columns).split(",").map((part) => part.trim())
+        : Object.keys(
+            Array.isArray(this.payload) ? (this.payload[0] ?? {}) : (this.payload ?? {}),
+          );
+
+    const absent = named.find((column) => this.missingColumns.includes(column));
+    if (!absent) return null;
+    return {
+      data: null,
+      error: { code: "42703", message: `column "${absent}" does not exist` },
+    };
+  }
+
   run() {
+    const missing = this.missingColumnError();
+    if (missing) return missing;
+
     const rows = this.store[this.table] ?? (this.store[this.table] = []);
 
     if (this.op === "insert") {
@@ -189,7 +220,30 @@ class Query {
     return this.shape(found);
   }
 
+  /**
+   * Return only the columns that were asked for.
+   *
+   * PostgREST does this, and the difference matters: code that reads a field
+   * it did not select gets `undefined` in production. A fake that hands back
+   * whole rows hides exactly the bug this suite exists to catch — a fallback
+   * SELECT that drops a column and then reads it anyway.
+   */
+  project(rows) {
+    if (this.columns === "*" || !this.columns) return rows;
+    const wanted = String(this.columns)
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (wanted.length === 0) return rows;
+    return rows.map((row) => {
+      const picked = {};
+      for (const column of wanted) picked[column] = row[column];
+      return picked;
+    });
+  }
+
   shape(rows) {
+    rows = this.project(rows);
     if (this.mode === "single") {
       if (rows.length !== 1) {
         return { data: null, error: { code: "PGRST116", message: "no rows returned" } };
@@ -212,7 +266,7 @@ class Query {
   }
 }
 
-export function createFakeClient(seed = {}) {
+export function createFakeClient(seed = {}, { missingColumns = [] } = {}) {
   const store = {
     payments: [],
     subscriptions: [],
@@ -226,7 +280,7 @@ export function createFakeClient(seed = {}) {
   return {
     store,
     from(table) {
-      return new Query(store, table);
+      return new Query(store, table, missingColumns);
     },
   };
 }

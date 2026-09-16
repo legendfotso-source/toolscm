@@ -99,7 +99,32 @@ still means "I meant to fill this in and forgot".
 
 ---
 
-## 4 — Tell Supabase where the site lives
+## 4 — Update the database
+
+The code knows about three plans — Free, Pro and Max. The database has to be
+told about the third one, or it will not be able to record who bought it.
+
+1. Open your Supabase project → **SQL Editor** → **New query**.
+2. Open `supabase/migrations/0002_tiers.sql` in VS Code, copy all of it, paste
+   it in, and press **Run**.
+3. It should say *Success. No rows returned*.
+
+That file is written to be safe to run twice, so if you are not sure whether
+you already ran it, run it again. Every subscription that already exists is
+marked **Pro**, because every plan sold before Max existed was a Pro plan — no
+customer loses anything.
+
+If you are setting up a brand new Supabase project, run
+`supabase/migrations/0001_init.sql` first, then this one.
+
+**Order does not matter much.** If you deploy the code before running this,
+people who already pay stay Pro — the site asks the database a second, simpler
+question when it notices the `tier` column is missing. But nobody can buy Max
+until the file has been run.
+
+---
+
+## 5 — Tell Supabase where the site lives
 
 Supabase refuses to send people back to an address it does not know, so
 sign-in will fail until this is done.
@@ -111,7 +136,7 @@ In the Supabase dashboard → **Authentication → URL Configuration**:
 
 ---
 
-## 5 — Become the administrator
+## 6 — Become the administrator
 
 1. Open your live site and **sign up** with `legendfotso@gmail.com`.
 2. Open `https://your-site/admin`. It should open.
@@ -138,7 +163,7 @@ that page deliberately reveals nothing to non-administrators.
 
 ---
 
-## 6 — Take your first payment
+## 7 — Take your first payment
 
 Set these in Vercel so the payment instructions appear on the site:
 
@@ -167,7 +192,7 @@ want to be the one who finds it.
 
 ---
 
-## 7 — Only now, switch the limit on
+## 8 — Only now, switch the limit on
 
 In `/admin`, turn on **Enforce the daily limit**.
 
@@ -185,7 +210,7 @@ visitors.
 2. In Vercel: **Settings → Domains → Add**, then follow their instructions.
 3. Set `NEXT_PUBLIC_SITE_URL` to the new address so Google, sitemap.xml and
    robots.txt point at the right place.
-4. Update the two Supabase URLs from step 4.
+4. Update the two Supabase URLs from step 5.
 5. Finish Google publishing: Google Cloud → **Branding**, fill in
    home page `https://your-domain/`, privacy `https://your-domain/privacy`,
    terms `https://your-domain/terms`. Then **Audience → Publier
@@ -198,8 +223,10 @@ visitors.
 
 - **Build fails on Vercel** — open the build log and read the first red line.
   It is almost always a missing environment variable.
-- **Sign-in loops back to the home page** — step 4 is missing or the address
+- **Sign-in loops back to the home page** — step 5 is missing or the address
   has a typo.
+- **The Max plan cannot be bought, or `/admin` refuses to activate it** — step
+  4 has not been run. Run `0002_tiers.sql` in the Supabase SQL editor.
 - **`/admin` says page not found** — wrong email, or `ADMIN_EMAIL` was removed
   before you first signed in.
 - **A tool is slow on a phone** — that is real. Processing happens on the

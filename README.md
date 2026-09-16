@@ -238,8 +238,11 @@ accident.
 ### Setting it up
 
 1. Create a Supabase project (free tier is enough).
-2. Run `supabase/migrations/0001_init.sql` in the SQL editor. It is written to
-   be safely re-runnable, so running it twice does no harm.
+2. Run `supabase/migrations/0001_init.sql` in the SQL editor, then
+   `supabase/migrations/0002_tiers.sql`. Both are written to be safely
+   re-runnable, so running either twice does no harm. The second adds the
+   `tier` column that tells Free, Pro and Max apart, and marks every
+   subscription that already exists as Pro — what it was sold as.
 3. Copy `.env.example` to `.env.local` and fill in the three Supabase values
    plus a random `USAGE_HASH_SALT`.
 4. `npm run test:supabase` — proves the limit really limits and that the

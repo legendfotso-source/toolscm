@@ -52,6 +52,25 @@ function loadCore() {
     copyFileSync(join(root, "src", "lib", "payments", name), join(src, name));
   }
 
+  // entitlement.ts is the read side of the same question — who is on which
+  // plan — and it is what every page consults. It is copied here too, with
+  // only its import specifiers adjusted for the flat layout: three
+  // mechanical substitutions, no change to a line of logic.
+  writeFileSync(
+    join(src, "entitlement.ts"),
+    readFileSync(join(root, "src", "lib", "entitlement.ts"), "utf8")
+      .replace('from "./payments/tiers"', 'from "./tiers"')
+      .replace('from "./supabase/admin"', 'from "@/lib/supabase/admin"')
+      .replace('from "./supabase/server-client"', 'from "@/lib/supabase/session"'),
+  );
+
+  writeFileSync(
+    join(shim, "session.ts"),
+    `let user: any = null;
+     export function setUser(next: any) { user = next; }
+     export async function currentUser(): Promise<any> { return user; }`,
+  );
+
   writeFileSync(join(shim, "server-only.ts"), "export {};\n");
   // core.ts imports SupabaseClient as a type only. The shape is irrelevant
   // here — the fake is checked by the assertions, not by the compiler.
@@ -86,10 +105,11 @@ function loadCore() {
         paths: {
           "server-only": ["shim/server-only.ts"],
           "@/lib/supabase/admin": ["shim/admin.ts"],
+          "@/lib/supabase/session": ["shim/session.ts"],
           "@supabase/supabase-js": ["shim/supabase.ts"],
         },
       },
-      files: ["src/core.ts", "src/term.ts", "src/tiers.ts"],
+      files: ["src/core.ts", "src/term.ts", "src/tiers.ts", "src/entitlement.ts"],
     }),
   );
 
@@ -110,7 +130,9 @@ function loadCore() {
     "src/core.js",
     "src/term.js",
     "src/tiers.js",
+    "src/entitlement.js",
     "shim/admin.js",
+    "shim/session.js",
     "shim/server-only.js",
     "shim/supabase.js",
   ]) {
@@ -122,6 +144,7 @@ function loadCore() {
     const rewritten = readFileSync(path, "utf8")
       .replace(/^\s*import\s+["']server-only["'];?\s*$/gm, "")
       .replace(/from\s+["']@\/lib\/supabase\/admin["']/g, 'from "../shim/admin.js"')
+      .replace(/from\s+["']@\/lib\/supabase\/session["']/g, 'from "../shim/session.js"')
       .replace(/from\s+["']@supabase\/supabase-js["']/g, 'from "../shim/supabase.js"')
       .replace(
         /(from\s+["']\.\.?\/[^"']+)(["'])/g,
@@ -139,7 +162,9 @@ const core = await import(join(out, "src", "core.js"));
 // The tier table is plain data with no Supabase in it, so it compiles and
 // imports alongside core.ts and can be asserted on directly.
 const { TIERS, tierOf, tierPriceXaf } = await import(join(out, "src", "tiers.js"));
+const entitlement = await import(join(out, "src", "entitlement.js"));
 const stub = await import(join(out, "shim", "admin.js"));
+const session = await import(join(out, "shim", "session.js"));
 
 const results = [];
 let failures = 0;
@@ -599,6 +624,84 @@ await check("Max costs more than Pro at every plan length", async () => {
   // And it tracks the admin price rather than being frozen at today's figure.
   assert.ok(tierPriceXaf(4000, "max") > tierPriceXaf(4000, "pro"));
   return "2,000 and 5,000 FCFA, both derived from one admin setting";
+});
+
+
+/* ---------------- reading the plan back ---------------- */
+
+/** A world where a subscription already exists, seen through entitlement.ts. */
+function subscriber(tier, { missingColumns = [] } = {}) {
+  const far = new Date(Date.now() + 20 * 86_400_000).toISOString();
+  const client = createFakeClient(
+    {
+      profiles: [{ id: "user-1", email: "client@example.com", is_admin: false }],
+      subscriptions: [
+        { id: "sub-1", user_id: "user-1", status: "active", end_date: far, tier },
+      ],
+    },
+    { missingColumns },
+  );
+  stub.setClient(client);
+  session.setUser({ id: "user-1" });
+  return client;
+}
+
+await check("the plan a page sees is the plan the database recorded", async () => {
+  subscriber("max");
+  const max = await entitlement.getEntitlement();
+  assert.equal(max.tier, "max");
+  assert.equal(max.isPro, true);
+
+  subscriber("pro");
+  assert.equal((await entitlement.getEntitlement()).tier, "pro");
+  return "max reads as max, pro as pro";
+});
+
+await check("a customer stays paid while the tier migration has not been run", async () => {
+  // Vercel redeploys the instant the code is pushed; 0002_tiers.sql is run by
+  // hand afterwards. In between, the new code asks for a column that does not
+  // exist. If that failure fell through to the free plan, every paying
+  // customer would lose what they bought until somebody noticed.
+  const client = subscriber("pro", { missingColumns: ["tier"] });
+
+  // Prove the world really is pre-migration first. Without this the test
+  // passes just as happily against a fake that forgot to refuse the column,
+  // which would make it a test of nothing.
+  const refused = await client.from("subscriptions").select("end_date, status, tier");
+  assert.equal(refused.error?.code, "42703", "the fake did not reproduce a missing column");
+
+  const seen = await entitlement.getEntitlement();
+  assert.equal(seen.isPro, true, "a paying customer was downgraded to free");
+  assert.equal(seen.tier, "pro", "a paid row with no tier column must read as Pro");
+  return "asked again without the column, still Pro";
+});
+
+await check("an expired subscription is free whatever tier it says", async () => {
+  const past = new Date(Date.now() - 86_400_000).toISOString();
+  const client = createFakeClient({
+    subscriptions: [
+      { id: "sub-1", user_id: "user-1", status: "active", end_date: past, tier: "max" },
+    ],
+  });
+  stub.setClient(client);
+  session.setUser({ id: "user-1" });
+
+  const seen = await entitlement.getEntitlement();
+  assert.equal(seen.tier, "free");
+  assert.equal(seen.isPro, false);
+  // And the row is marked expired rather than being re-evaluated for ever.
+  assert.equal(client.store.subscriptions[0].status, "expired");
+  return "expiry beats the tier column";
+});
+
+await check("a signed-out visitor is free even with a subscription in the table", async () => {
+  subscriber("max");
+  session.setUser(null);
+  const seen = await entitlement.getEntitlement();
+  assert.equal(seen.isPro, false);
+  assert.equal(seen.userId, null);
+  session.setUser({ id: "user-1" });
+  return "no session, no plan";
 });
 
 console.log("");
