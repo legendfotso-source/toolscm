@@ -42,6 +42,7 @@ execFileSync(
   join(root, "node_modules", ".bin", "tsc"),
   [
     join(root, "src", "lib", "tools", "text-layout.ts"),
+    join(root, "src", "lib", "tools", "zip.ts"),
     "--outDir", out,
     "--module", "esnext",
     "--target", "es2022",
@@ -53,6 +54,7 @@ execFileSync(
 writeFileSync(join(out, "package.json"), JSON.stringify({ type: "module" }));
 
 const layout = await import(join(out, "text-layout.js"));
+const zip = await import(join(out, "zip.js"));
 const { PDFDocument, StandardFonts } = await import("pdf-lib");
 
 const pdf = await PDFDocument.create();
@@ -156,6 +158,75 @@ await check("runs of blank lines do not become empty paragraphs", async () => {
 await check("a page with nothing on it yields nothing", async () => {
   assert.deepEqual(layout.paragraphsFromLines("\n  \n\n"), []);
   return "which is what lets the tool detect a scan";
+});
+
+
+/* ---------------- The ZIP writer ---------------- */
+
+await check("the checksum matches the published CRC-32 test vector", async () => {
+  // Every ZIP reader verifies this. A checksum that is subtly wrong produces
+  // an archive that opens and then reports every file as corrupt — a much
+  // worse failure than one that never opened at all.
+  assert.equal(zip.crc32(new TextEncoder().encode("123456789")), 0xcbf43926);
+  return "0xcbf43926, the standard vector";
+});
+
+await check("an archive we write is one a real unzip program accepts", async () => {
+  const { execFileSync: run } = await import("node:child_process");
+  const { writeFileSync: write, readFileSync: read } = await import("node:fs");
+
+  const encoder = new TextEncoder();
+  const blob = zip.buildZip([
+    { name: "rapport.txt", data: encoder.encode("Bonjour Yaoundé") },
+    { name: "gros.bin", data: encoder.encode("x".repeat(20000)) },
+  ]);
+  assert.equal(blob.type, "application/zip");
+
+  const path = join(out, "archive.zip");
+  write(path, new Uint8Array(await blob.arrayBuffer()));
+
+  // -t is unzip's own integrity check: headers, sizes, offsets and every CRC.
+  assert.match(run("unzip", ["-t", path], { encoding: "utf8" }), /No errors detected/);
+
+  run("unzip", ["-o", "-q", path, "-d", join(out, "unpacked")]);
+  assert.equal(read(join(out, "unpacked", "rapport.txt"), "utf8"), "Bonjour Yaoundé");
+  return "unzip -t reports no errors, and the accents survived";
+});
+
+await check("a filename cannot escape the folder it is extracted into", async () => {
+  // Zip Slip. These names come from our own tools rather than from a stranger,
+  // which is a reason to be careful anyway and not a reason to write the
+  // dangerous form.
+  assert.equal(zip.safeEntryName("../../etc/passwd", "x"), "_.._etc_passwd");
+  assert.ok(!zip.safeEntryName("a/b/c.pdf", "x").includes("/"));
+  assert.ok(!zip.safeEntryName("a\\b\\c.pdf", "x").includes("\\"));
+  assert.equal(zip.safeEntryName("", "fallback.pdf"), "fallback.pdf");
+  assert.equal(zip.safeEntryName("   ", "fallback.pdf"), "fallback.pdf");
+  return "separators flattened, empty names replaced";
+});
+
+await check("two files with the same name both survive the archive", async () => {
+  // Splitting a PDF produces page-1.pdf twice often enough that losing one
+  // silently would be a real bug in a real tool.
+  assert.deepEqual(
+    zip.uniqueNames(["page.pdf", "page.pdf", "PAGE.pdf", "other.pdf"]),
+    ["page.pdf", "page (1).pdf", "PAGE (2).pdf", "other.pdf"],
+  );
+  return "duplicates numbered, case-insensitively";
+});
+
+await check("an empty batch refuses rather than writing an empty archive", async () => {
+  assert.throws(() => zip.buildZip([]), /nothing to put/);
+  return "no zero-file archive";
+});
+
+await check("a date before the ZIP epoch is clamped, not written as a negative year", async () => {
+  // MS-DOS dates start in 1980. A negative year is shown as garbage by some
+  // readers and refused outright by others.
+  const old = zip.dosDateTime(new Date("1970-01-01T00:00:00Z"));
+  assert.ok(old.date >= 0 && old.date <= 0xffff, `date out of range: ${old.date}`);
+  assert.ok(zip.dosDateTime(new Date("2026-09-16T10:30:00")).date > old.date);
+  return "1980 floor, both fit in sixteen bits";
 });
 
 console.log("");
