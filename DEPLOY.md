@@ -117,10 +117,16 @@ customer loses anything.
 If you are setting up a brand new Supabase project, run
 `supabase/migrations/0001_init.sql` first, then this one.
 
-**Order does not matter much.** If you deploy the code before running this,
-people who already pay stay Pro — the site asks the database a second, simpler
-question when it notices the `tier` column is missing. But nobody can buy Max
-until the file has been run.
+**Run it straight after the deploy finishes.** Until you do:
+
+- people who already pay **stay Pro** — the site notices the missing column and
+  asks the database a simpler question instead, so nobody is downgraded;
+- but **no new payment of any kind can be recorded** — not Max, not Pro, not
+  one you activate by hand in `/admin`. The database refuses to save a payment
+  that names a plan it has not heard of, and `/admin` shows an error rather
+  than pretending it worked.
+
+So: deploy, run this file, then carry on.
 
 ---
 
@@ -225,8 +231,15 @@ visitors.
   It is almost always a missing environment variable.
 - **Sign-in loops back to the home page** — step 5 is missing or the address
   has a typo.
-- **The Max plan cannot be bought, or `/admin` refuses to activate it** — step
-  4 has not been run. Run `0002_tiers.sql` in the Supabase SQL editor.
+- **`/admin` shows an error when you activate a plan, or a payment fails to
+  record** — step 4 has not been run. Run `0002_tiers.sql` in the Supabase SQL
+  editor, then try again. The same transaction id can safely be entered twice.
+- **You changed the price in `/admin`** — the pricing page, the checkout, the
+  Mobile Money instructions and the paywall all follow it on their own. Two
+  sentences of marketing copy do not: the home page line "Pro à 2 000
+  FCFA/mois" (`valueAffordableText` in `src/locales/fr.json` and `en.json`) and
+  the pricing page's search-engine description (`src/app/pricing/page.tsx`).
+  Update those two by hand.
 - **`/admin` says page not found** — wrong email, or `ADMIN_EMAIL` was removed
   before you first signed in.
 - **A tool is slow on a phone** — that is real. Processing happens on the
