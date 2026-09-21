@@ -137,7 +137,7 @@ export function PricingContent({
             featured
             name={t("pricing.proName")}
             price={formatXaf(proMonthly.amountXaf, fr)}
-            secondaryPrice={`${formatUsd(proMonthly.amountUsdCents, fr)} / ${t("pricing.proPeriod")}`}
+            secondaryPrice={fr ? `ou ${formatUsd(proMonthly.amountUsdCents, fr)} par carte` : `or ${formatUsd(proMonthly.amountUsdCents, fr)} by card`}
             period={t("pricing.proPeriod")}
             features={[
               t("pricing.proFeature1"),
@@ -158,7 +158,7 @@ export function PricingContent({
           <PricingCard
             name={t("pricing.maxName")}
             price={formatXaf(maxMonthly.amountXaf, fr)}
-            secondaryPrice={`${formatUsd(maxMonthly.amountUsdCents, fr)} / ${t("pricing.maxPeriod")}`}
+            secondaryPrice={fr ? `ou ${formatUsd(maxMonthly.amountUsdCents, fr)} par carte` : `or ${formatUsd(maxMonthly.amountUsdCents, fr)} by card`}
             period={t("pricing.maxPeriod")}
             features={[
               t("pricing.maxFeature1"),
@@ -212,11 +212,9 @@ function PlanComparison() {
     },
     {
       label: t("pricing.rowSize"),
-      values: TIER_IDS.map((id) =>
-        TIERS[id].fileSizeMultiplier === 1
-          ? t("pricing.standard")
-          : `×${TIERS[id].fileSizeMultiplier}`,
-      ) as [string, string, string],
+      // ×1 rather than a word: the column has to fit a 320px screen, and
+      // "×1, ×2, ×4" reads as the comparison it is.
+      values: TIER_IDS.map((id) => `×${TIERS[id].fileSizeMultiplier}`) as [string, string, string],
     },
     {
       label: t("pricing.rowZip"),
@@ -230,20 +228,20 @@ function PlanComparison() {
     <div className="mt-12">
       <SectionHeading title={t("pricing.compareTitle")} />
       <Card className="mt-4 overflow-x-auto p-0">
-        <table className="w-full min-w-[420px] border-collapse text-sm">
+        <table className="w-full border-collapse text-[13px] sm:text-sm">
           <caption className="sr-only">{t("pricing.compareTitle")}</caption>
           <thead>
             <tr className="border-b border-line text-left">
-              <th scope="col" className="px-4 py-3 font-semibold">
+              <th scope="col" className="px-2.5 py-3 font-semibold sm:px-4">
                 {t("pricing.colFeature")}
               </th>
-              <th scope="col" className="px-4 py-3 text-center font-semibold">
+              <th scope="col" className="px-1.5 py-3 text-center font-semibold sm:px-4">
                 {t("pricing.freeName")}
               </th>
-              <th scope="col" className="px-4 py-3 text-center font-semibold text-violet-deep">
+              <th scope="col" className="px-1.5 py-3 text-center font-semibold text-violet-deep sm:px-4">
                 {t("pricing.proName")}
               </th>
-              <th scope="col" className="px-4 py-3 text-center font-semibold">
+              <th scope="col" className="px-1.5 py-3 text-center font-semibold sm:px-4">
                 {t("pricing.maxName")}
               </th>
             </tr>
@@ -251,11 +249,11 @@ function PlanComparison() {
           <tbody>
             {rows.map((row) => (
               <tr key={row.label} className="border-b border-line/60 last:border-0">
-                <th scope="row" className="px-4 py-3 text-left font-normal text-ink-soft">
+                <th scope="row" className="px-2.5 py-3 text-left font-normal text-ink-soft sm:px-4">
                   {row.label}
                 </th>
                 {row.values.map((value, index) => (
-                  <td key={index} className="px-4 py-3 text-center tabular-nums">
+                  <td key={index} className="px-1.5 py-3 text-center tabular-nums sm:px-4">
                     {value}
                   </td>
                 ))}

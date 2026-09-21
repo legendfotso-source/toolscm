@@ -556,8 +556,10 @@ check("no price is typed into a translation file", () => {
 });
 
 check("prices are written the way each language writes them", () => {
-  assert.equal(formatXaf(5000, true), "5 000 FCFA");
-  assert.equal(formatXaf(5000, false), "5,000 FCFA");
+  // No-break spaces throughout, so a price never splits across two lines.
+  assert.equal(formatXaf(5000, true), "5\u00a0000\u00a0FCFA");
+  assert.equal(formatXaf(5000, false), "5,000\u00a0FCFA");
+  assert.doesNotMatch(formatXaf(1250000, true), / /, "an ordinary space can break the price");
   assert.equal(formatUsd(500, false), "$5");
   assert.equal(formatUsd(1250, false), "$12.50");
   assert.equal(formatUsd(1250, true), "12,50 $");

@@ -200,7 +200,7 @@
     "maxNote": "Built for a print shop, a cybercafé or an office working through dozens of documents a day.",
     "proFeature6": "Files up to 2× larger",
     "compareTitle": "What each plan actually gives you",
-    "compareNote": "Every limit in this table is enforced by the server. None of them is decorative.",
+    "compareNote": "The daily allowance is checked by our server. The batch and size limits apply in your browser, because your files are never sent to our servers.",
     "colFeature": "Feature",
     "rowTools": "Every published tool",
     "rowDaily": "Operations per day",
@@ -210,7 +210,6 @@
     "rowAds": "No advertising",
     "rowSupport": "Priority support",
     "unlimited": "No limit",
-    "standard": "Standard",
     "double": "×2",
     "quadruple": "×4"
   },

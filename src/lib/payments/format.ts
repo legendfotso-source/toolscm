@@ -6,10 +6,12 @@
  */
 
 export function formatXaf(amount: number, fr: boolean): string {
-  // fr-FR groups with a narrow no-break space; a plain space reads the same
-  // and survives being copied into a WhatsApp message.
-  const digits = amount.toLocaleString(fr ? "fr-FR" : "en-GB").replace(/\u202f|\u00a0/g, " ");
-  return `${digits} FCFA`;
+  // Every space is a no-break space, so "2 000 FCFA" never breaks across two
+  // lines on a narrow card. fr-FR's own separator is the NARROW no-break
+  // space, which some Android fonts draw as a box; the ordinary no-break
+  // space looks the same and renders everywhere.
+  const digits = amount.toLocaleString(fr ? "fr-FR" : "en-GB").replace(/\u202f/g, "\u00a0");
+  return `${digits}\u00a0FCFA`;
 }
 
 export function formatUsd(cents: number, fr: boolean): string {

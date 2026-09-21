@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { type PaidTier, type Plan, type PlanId, planName } from "@/lib/payments/plans";
 import { formatUsd, formatXaf } from "@/lib/payments/format";
-import { TIERS, tierName, type TierId } from "@/lib/payments/tiers";
+import { TIERS, tierName } from "@/lib/payments/tiers";
 import { track } from "@/lib/analytics";
 import { Button, Notice, cx } from "./ui";
 

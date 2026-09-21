@@ -200,7 +200,7 @@
     "maxNote": "Pensé pour une imprimerie, un cybercafé ou un cabinet qui traite des dizaines de documents par jour.",
     "proFeature6": "Fichiers jusqu'à 2× plus lourds",
     "compareTitle": "Ce que chaque plan donne vraiment",
-    "compareNote": "Chaque limite de ce tableau est appliquée par le serveur. Aucune n'est décorative.",
+    "compareNote": "Le quota quotidien est contrôlé par notre serveur. Les limites de lot et de taille s'appliquent dans votre navigateur, parce que vos fichiers ne sont jamais envoyés sur nos serveurs.",
     "colFeature": "Fonction",
     "rowTools": "Tous les outils publiés",
     "rowDaily": "Opérations par jour",
@@ -210,7 +210,6 @@
     "rowAds": "Sans publicité",
     "rowSupport": "Support prioritaire",
     "unlimited": "Sans limite",
-    "standard": "Standard",
     "double": "×2",
     "quadruple": "×4"
   },

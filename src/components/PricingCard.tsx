@@ -1,7 +1,7 @@
 "use client";
 
 import { useLocale } from "@/lib/i18n/LocaleProvider";
-import { Badge, ButtonLink, cx } from "./ui";
+import { ButtonLink, cx } from "./ui";
 
 export function PricingCard({
   name,
@@ -39,9 +39,12 @@ export function PricingCard({
     >
       {featured ? (
         <div className="absolute -top-3 left-6">
-          <Badge tone="violet" className="bg-violet-deep text-white">
+          {/* A plain span, not <Badge>: the badge's own light background won
+              over the solid one passed in, leaving white text on pale violet
+              that nobody could read. */}
+          <span className="inline-flex items-center rounded-full bg-violet-deep px-2.5 py-0.5 text-[11px] font-semibold leading-5 text-white">
             {t("pricing.proBadge")}
-          </Badge>
+          </span>
         </div>
       ) : null}
 
@@ -49,9 +52,11 @@ export function PricingCard({
         {name}
       </h2>
 
-      <p className="mt-3 flex items-baseline gap-1.5">
-        <span className="text-[32px] font-extrabold tracking-[-0.02em] text-ink">{price}</span>
-        <span className="text-[14px] text-ink-soft">/ {period}</span>
+      <p className="mt-3 flex flex-wrap items-baseline gap-x-1.5">
+        <span className="whitespace-nowrap text-[32px] font-extrabold tracking-[-0.02em] text-ink">
+          {price}
+        </span>
+        <span className="text-[14px] text-ink-soft">{period}</span>
       </p>
       {secondaryPrice ? (
         <p className="mt-0.5 text-[13px] text-ink-soft">{secondaryPrice}</p>
