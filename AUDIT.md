@@ -39,7 +39,7 @@ files to the tools and opens what comes back.
 
 **Already in place:**
 
-- **French and English, complete.** 270 strings in each language after this
+- **French and English, complete.** 275 strings in each language after this
   work, none missing on either side (checked again today).
 - **SEO.** A title, description and keywords for every tool, a generated
   `sitemap.xml` and `robots.txt`, and four written guides that link to live
@@ -138,7 +138,7 @@ and refuses to write a corrupt archive past 4 GB.
 - the receipt says which plan was bought;
 - `/account` shows the plan name and what it includes.
 
-**Also:** `supabase/migrations/0002_tiers.sql`, 28 new strings in each
+**Also:** `supabase/migrations/0002_tiers.sql`, 33 new strings in each
 language (and the two that held Pro's price as fixed text removed), and
 DEPLOY.md and README updated.
 
@@ -301,7 +301,10 @@ decision that only you can provide.
 8. **A first real payment.** The payment code has run against a test database
    and against real PostgreSQL, but never with real money. Make one payment
    yourself, from a second account, before telling anyone about the site.
-9. **Two sentences of marketing copy still contain a fixed price**: the home
+9. **Account creation for the public** (section 9): a real email sender in
+   Supabase, or email confirmation switched off; and the Google consent screen
+   published.
+10. **Two sentences of marketing copy still contain a fixed price**: the home
    page's "Pro à 2 000 FCFA/mois" and the pricing page's search-engine
    description. Everything else follows `/admin`. If you change the price,
    update those two by hand (DEPLOY.md, "If something breaks", says where).
@@ -332,8 +335,75 @@ decision that only you can provide.
    names it.
 8. **Only then** turn on **Enforce the daily limit** in `/admin`.
 
+Before step 6, make sure the public can create an account (section 9, and
+DEPLOY.md step 5). Otherwise nobody can use a tool.
+
 Leave `payments_enabled` off until you have a provider account and have seen
 one sandbox payment go through.
+
+---
+
+## 9 — Accounts are now required to use a tool
+
+Added after the rest of this report, at your request: a visitor who is not
+signed in can no longer use the site's tools.
+
+**What stays public:** the home page, every tool's page and explanations,
+pricing, the guides, the legal pages, sign-in and sign-up. Search engines keep
+indexing the site, and a visitor can see what an account gets them.
+
+**What needs an account:** using any of the 26 tools.
+
+**Where it is enforced:**
+
+- **In the page.** The tool is replaced by "Connectez-vous pour utiliser cet
+  outil", with *Create an account* and *Sign in*. Both bring the visitor back
+  to the same tool afterwards. The tool's code is not even downloaded.
+- **At the server.** `/api/usage` answers `401 sign_in_required` to a caller
+  with no session, before anything is counted. The 22 tools that take a file
+  all ask it before starting.
+- **Honest limit:** files are processed in the browser and never reach the
+  server, so someone who rewrites the page's JavaScript on their own machine
+  can still run a tool there. The 4 tools that take no file (QR generator,
+  word counter, age calculator, case converter) are closed in the page only.
+  This is the same trade-off as the daily limit, and the price of the privacy
+  promise.
+
+**Fixed along the way:**
+
+- The sign-in and sign-up forms ignored `?next=`: the checkout had been
+  sending people to `/signin?next=/pricing` and then dropping them on
+  `/account`. Now they go back where they came from.
+- **A security hole:** the sign-in callback accepted any address starting
+  with `/`, and `//evil.example` starts with `/`. A crafted link could have
+  sent someone from your site to another one. It now accepts only real paths
+  on this site, and a test tries ten hostile variants.
+- If email confirmation is switched off in Supabase, a new account now goes
+  straight to its tool instead of being told to wait for an email that never
+  comes.
+- Every page that promised "no account needed" now says the opposite. That
+  includes the pricing FAQ, the terms, and **the privacy policy**, which now
+  lists what an account stores: email, sign-in method (and the name and photo
+  Google passes on), creation date, and plan and payments for subscribers.
+  The daily count is still kept per device and not linked to the account.
+
+**⚠ Before deploying this, make sure the public can create an account.** As
+Supabase comes out of the box, it cannot:
+
+- Supabase's built-in email sender is, in its own documentation's words, "not
+  meant for production use". It sends at most **2 messages per hour**, and
+  only to addresses in your Supabase team. Anyone else who signs up by email
+  never receives the confirmation link, and so can never use a tool. Either
+  connect a real email sender (SMTP) in Supabase or switch off *Confirm email*.
+  DEPLOY.md, step 5, explains both.
+- Google sign-in works only for the test users listed in Google Cloud until
+  the consent screen is published.
+
+**Worth knowing:** the free daily allowance is still counted **per device**,
+not per account. One account used on two phones gets 3 operations on each.
+Counting per account would need a small database change. I have not made it,
+because you did not ask, but it is the natural next step now that everyone
+has an account.
 
 ---
 
@@ -343,22 +413,25 @@ Every test suite was run against this version:
 
 | Suite | Checks |
 | --- | --- |
-| `npm run test:config` | 19 |
+| `npm run test:config` | 21 |
 | `npm run test:layout` | 18, including a real `unzip -t` on an archive the code wrote |
 | `npm run test:money` | 27 |
 | `npm run test:payments` | 45 |
 | `npm run test:tools` | 48, in a real browser with real files |
 | `npm run test:db` | 31 guarantees against real PostgreSQL |
+| `npm run test:access` | 6, in a real browser, as a signed-out visitor |
 
-That is **188 checks, all passing**, plus a clean type check, no lint errors,
+That is **196 checks, all passing**, plus a clean type check, no lint errors,
 a successful production build, and screenshots of the pricing page at 320 px
 and 1280 px.
 
-The new tests were checked by breaking the code on purpose: **21 deliberate
-errors** (in plan pricing, the ZIP writer, the pre-migration fallback, and the
-displayed-versus-charged price). The tests caught 20 on the first run. The
-21st got through because of the test stand-in problem in section 3, item 9,
-and is caught now.
+The new tests were checked by breaking the code on purpose: **25 deliberate
+errors** (in plan pricing, the ZIP writer, the pre-migration fallback, the
+displayed-versus-charged price, and the account requirement). Two got through
+at first, each because of a flaw in the test rather than the code: the test
+stand-in in section 3, item 9, and a browser test that was talking to a
+server left over from its previous run. Both flaws are fixed, and both errors
+are caught now.
 
 **What the tests do not cover:** `/admin` and `/account` need a signed-in
 session and a live database, so I have not seen their new plan selectors on

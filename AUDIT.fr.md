@@ -42,7 +42,7 @@ vrais fichiers aux outils et ouvre ce qui en ressort.
 
 **Déjà en place :**
 
-- **Français et anglais, complets.** 270 textes dans chaque langue après ce
+- **Français et anglais, complets.** 275 textes dans chaque langue après ce
   travail, aucun manquant d'un côté ou de l'autre (revérifié aujourd'hui).
 - **Référencement.** Un titre, une description et des mots-clés pour chaque
   outil, un `sitemap.xml` et un `robots.txt` générés, et quatre guides rédigés
@@ -149,7 +149,7 @@ une archive corrompue au-delà de 4 Go.
 - le reçu indique la formule achetée ;
 - `/account` affiche le nom de la formule et ce qu'elle comprend.
 
-**Aussi :** `supabase/migrations/0002_tiers.sql`, 28 nouveaux textes dans
+**Aussi :** `supabase/migrations/0002_tiers.sql`, 33 nouveaux textes dans
 chaque langue (et les deux qui contenaient le prix Pro en texte fixe retirés),
 et DEPLOY.md et README mis à jour.
 
@@ -318,7 +318,10 @@ compte ou une décision que vous seul pouvez fournir.
    test et sur un vrai PostgreSQL, mais jamais avec de l'argent réel. Faites un
    paiement vous-même, depuis un second compte, avant de parler du site à qui
    que ce soit.
-9. **Deux phrases marketing contiennent encore un prix fixe** : « Pro à 2 000
+9. **La création de compte pour le public** (section 9) : un vrai
+   expéditeur d'e-mails dans Supabase, ou la confirmation d'e-mail
+   désactivée ; et l'écran de consentement Google publié.
+10. **Deux phrases marketing contiennent encore un prix fixe** : « Pro à 2 000
    FCFA/mois » sur la page d'accueil, et la description de la page Tarifs pour
    les moteurs de recherche. Tout le reste suit `/admin`. Si vous changez le
    prix, modifiez ces deux phrases à la main (DEPLOY.md, section « If something
@@ -350,8 +353,80 @@ compte ou une décision que vous seul pouvez fournir.
    nomme.
 8. **Seulement ensuite**, activez **Enforce the daily limit** dans `/admin`.
 
+Avant l'étape 6, assurez-vous que le public peut créer un compte (section 9,
+et DEPLOY.md étape 5). Sinon, personne ne peut utiliser un outil.
+
 Laissez `payments_enabled` désactivé tant que vous n'avez pas de compte chez un
 prestataire et que vous n'avez pas vu un paiement de test aboutir.
+
+---
+
+## 9 — Un compte est désormais nécessaire pour utiliser un outil
+
+Ajouté après le reste de ce rapport, à votre demande : un visiteur non
+connecté ne peut plus utiliser les outils du site.
+
+**Ce qui reste public :** la page d'accueil, la page et les explications de
+chaque outil, les tarifs, les guides, les pages légales, la connexion et
+l'inscription. Les moteurs de recherche continuent d'indexer le site, et un
+visiteur voit ce qu'un compte lui apporte.
+
+**Ce qui demande un compte :** utiliser n'importe lequel des 26 outils.
+
+**Où c'est appliqué :**
+
+- **Dans la page.** L'outil est remplacé par « Connectez-vous pour utiliser
+  cet outil », avec *Créer un compte* et *Se connecter*. Les deux ramènent le
+  visiteur sur le même outil ensuite. Le code de l'outil n'est même pas
+  téléchargé.
+- **Sur le serveur.** `/api/usage` répond `401 sign_in_required` à un appel
+  sans session, avant de compter quoi que ce soit. Les 22 outils qui prennent
+  un fichier le consultent tous avant de démarrer.
+- **Limite honnête :** les fichiers sont traités dans le navigateur et
+  n'atteignent jamais le serveur, donc quelqu'un qui réécrit le JavaScript de
+  la page sur sa propre machine peut encore y faire tourner un outil. Les 4
+  outils sans fichier (QR code, compteur de mots, calculateur d'âge,
+  convertisseur de casse) sont fermés dans la page seulement. C'est le même
+  compromis que pour la limite quotidienne, et le prix de la promesse de
+  confidentialité.
+
+**Corrigé au passage :**
+
+- Les formulaires de connexion et d'inscription ignoraient `?next=` : la page
+  de paiement envoyait vers `/signin?next=/pricing`, puis la personne
+  atterrissait sur `/account`. Désormais elle revient d'où elle venait.
+- **Une faille de sécurité :** le retour de connexion acceptait toute adresse
+  commençant par `/`, et `//evil.example` commence par `/`. Un lien piégé
+  aurait pu envoyer quelqu'un de votre site vers un autre. Seuls les vrais
+  chemins de ce site sont acceptés maintenant, et un test essaie dix variantes
+  hostiles.
+- Si la confirmation d'e-mail est désactivée dans Supabase, un nouveau compte
+  va directement à son outil au lieu d'attendre un e-mail qui n'arrive jamais.
+- Toutes les pages qui promettaient « aucun compte requis » disent maintenant
+  l'inverse, y compris la FAQ des tarifs, les conditions d'utilisation et **la
+  politique de confidentialité**, qui liste ce qu'un compte conserve :
+  e-mail, mode de connexion (avec le nom et la photo transmis par Google),
+  date de création, et formule et paiements pour les abonnés. Le décompte
+  quotidien reste tenu par appareil, sans lien avec le compte.
+
+**⚠ Avant de déployer ceci, assurez-vous que le public peut créer un compte.**
+Tel que Supabase est livré, il ne le peut pas :
+
+- L'expéditeur d'e-mails intégré à Supabase n'est, selon sa propre
+  documentation, « pas destiné à la production ». Il envoie au maximum **2
+  messages par heure**, et seulement aux adresses de votre équipe Supabase.
+  Toute autre personne qui s'inscrit par e-mail ne reçoit jamais le lien de
+  confirmation, et ne peut donc jamais utiliser un outil. Branchez un vrai
+  expéditeur (SMTP) dans Supabase, ou désactivez *Confirm email*. DEPLOY.md,
+  étape 5, explique les deux.
+- La connexion Google ne marche que pour les utilisateurs de test déclarés
+  dans Google Cloud tant que l'écran de consentement n'est pas publié.
+
+**Bon à savoir :** la limite gratuite quotidienne est toujours comptée **par
+appareil**, pas par compte. Un compte utilisé sur deux téléphones a droit à 3
+opérations sur chacun. La compter par compte demanderait une petite
+modification de la base. Je ne l'ai pas faite, car vous ne l'avez pas
+demandée, mais c'est l'étape logique maintenant que tout le monde a un compte.
 
 ---
 
@@ -361,22 +436,25 @@ Chaque suite de tests a été lancée sur cette version :
 
 | Suite | Vérifications |
 | --- | --- |
-| `npm run test:config` | 19 |
+| `npm run test:config` | 21 |
 | `npm run test:layout` | 18, dont un vrai `unzip -t` sur une archive écrite par le code |
 | `npm run test:money` | 27 |
 | `npm run test:payments` | 45 |
 | `npm run test:tools` | 48, dans un vrai navigateur avec de vrais fichiers |
 | `npm run test:db` | 31 garanties sur un vrai PostgreSQL |
+| `npm run test:access` | 6, dans un vrai navigateur, en visiteur non connecté |
 
-Soit **188 vérifications, toutes réussies**, plus une vérification de types
+Soit **196 vérifications, toutes réussies**, plus une vérification de types
 propre, aucune erreur de lint, une compilation de production réussie, et des
 captures d'écran de la page Tarifs à 320 px et 1280 px.
 
-Les nouveaux tests ont été contrôlés en cassant le code exprès : **21 erreurs
+Les nouveaux tests ont été contrôlés en cassant le code exprès : **25 erreurs
 volontaires** (dans le calcul des formules, l'écriture du ZIP, le repli
-d'avant-migration, et l'écart entre prix affiché et prix facturé). Les tests en
-ont attrapé 20 du premier coup. La 21e est passée à cause du problème de fausse
-base de données de la section 3, point 9, et elle est attrapée maintenant.
+d'avant-migration, l'écart entre prix affiché et prix facturé, et l'obligation
+de compte). Deux sont passées au début, chaque fois à cause d'un défaut du test
+et non du code : la fausse base de données de la section 3, point 9, et un
+test navigateur qui parlait à un serveur resté de l'exécution précédente. Les
+deux défauts sont corrigés, et les deux erreurs sont attrapées maintenant.
 
 **Ce que les tests ne couvrent pas :** `/admin` et `/account` exigent une
 session connectée et une vraie base de données, donc je n'ai pas vu leurs
