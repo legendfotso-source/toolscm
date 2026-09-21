@@ -6,7 +6,7 @@ import { usableTools } from "@/lib/tools/registry";
 export const metadata: Metadata = {
   title: "Tools.cm — Outils PDF et image gratuits, simples et privés",
   description:
-    "Compressez un PDF, fusionnez vos documents, convertissez JPG en PDF ou supprimez l'arrière-plan d'une photo. Gratuit, sans compte, et vos fichiers restent sur votre appareil.",
+    "Compressez un PDF, fusionnez vos documents, convertissez JPG en PDF ou supprimez l'arrière-plan d'une photo. Gratuit avec un compte, et vos fichiers restent sur votre appareil.",
   alternates: { canonical: "/" },
 };
 

@@ -298,6 +298,44 @@ await check("the root layout still supplies the title template", async () => {
   return "%s — Tools.cm";
 });
 
+/* ---------------- who may use a tool ---------------- */
+
+const access = await import(compile(join("src", "lib", "auth", "access.ts"), "access.js"));
+
+await check("a signed-out visitor is refused whenever accounts exist", () => {
+  assert.equal(access.signInGate(true, null), "sign_in_required");
+  assert.equal(access.signInGate(true, "user-1"), "ok");
+  // With no Supabase there are no accounts to sign in to. Requiring one would
+  // lock everybody out of a site that has no way to let them in.
+  assert.equal(access.signInGate(false, null), "ok");
+  return "no session + accounts on = refused";
+});
+
+await check("the way back after signing in can only be a page on this site", () => {
+  const ok = ["/tool/merge-pdf", "/pricing", "/account?tab=receipts"];
+  for (const path of ok) assert.equal(access.safeNext(path), path);
+
+  // Every one of these is read by some browser or URL parser as ANOTHER
+  // website, or is not a path at all.
+  const hostile = [
+    "//evil.example",
+    "/\\evil.example",
+    "/\t/evil.example",
+    "/\n/evil.example",
+    "https://evil.example",
+    "javascript:alert(1)",
+    "evil.example",
+    "",
+    null,
+    undefined,
+  ];
+  for (const value of hostile) {
+    assert.equal(access.safeNext(value), "/account", `accepted ${JSON.stringify(value)}`);
+  }
+  assert.equal(access.signInHref("//evil.example"), "/signin?next=%2F");
+  return `${ok.length} kept, ${hostile.length} refused`;
+});
+
 console.log("");
 console.log(`${results.filter(Boolean).length}/${results.length} checks passed`);
 process.exit(failures > 0 ? 1 : 0);

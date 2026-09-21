@@ -8,7 +8,7 @@
  *
  *   npm run build && npm run test:tools
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,15 +47,40 @@ async function check(name, fn) {
 /* Server                                                              */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The build these tests run against: accounts switched OFF.
+ *
+ * These tests are about what each tool does to a file. Using a tool needs a
+ * signed-in account whenever Supabase is configured — and .env.local points
+ * at the live project — so against the ordinary build every tool would show
+ * the sign-in panel and nothing here could run. Signing a test robot into the
+ * real project is not an option. So the site is built a second time, into its
+ * own directory, with the Supabase variables set to empty (which takes
+ * precedence over .env.local), exactly as a deployment without accounts runs.
+ * The sign-in requirement itself is tested by run-access-tests.mjs.
+ */
+const TOOLS_ENV = {
+  ...process.env,
+  TOOLSCM_DIST_DIR: ".next-tools",
+  NEXT_PUBLIC_SUPABASE_URL: "",
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: "",
+  NODE_ENV: "production",
+};
+
 async function startServer() {
   // A server left over from an earlier run would still be serving the previous
   // build, whose chunk names no longer exist — every page would 500.
   await stopLeftoverServers();
 
+  if (!process.env.SKIP_BUILD) {
+    console.log("building without accounts for the tool tests…");
+    execFileSync("npx", ["next", "build"], { cwd: join(here, ".."), env: TOOLS_ENV, stdio: "pipe" });
+  }
+
   const server = spawn("npx", ["next", "start", "-p", String(PORT)], {
     cwd: join(here, ".."),
     stdio: ["ignore", "pipe", "pipe"],
-    env: { ...process.env, NODE_ENV: "production" },
+    env: TOOLS_ENV,
   });
 
   server.stderr.on("data", (chunk) => {

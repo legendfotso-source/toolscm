@@ -283,8 +283,8 @@ export async function getAudience(): Promise<Audience | null> {
  *
  * This one is a list of real people with real email addresses, and that is
  * exactly why it is behind `isAdmin()` and why /admin returns notFound() to
- * everyone else. Free use needs no account, so this is the small minority who
- * chose to create one — it is never the same thing as "who uses the site".
+ * everyone else. Using a tool requires an account, so this is everyone who
+ * uses the tools — but not everyone who reads the site's pages.
  */
 export async function getMembers(limit = 200): Promise<Member[]> {
   const client = adminClient();

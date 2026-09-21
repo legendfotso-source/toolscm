@@ -40,8 +40,8 @@ const PRICING_FAQ: ToolFaqEntry[] = [
       en: "Do I need an account to use Tools.cm?",
     },
     a: {
-      fr: "Non. L'usage gratuit ne demande aucune inscription. Un compte ne deviendra nécessaire que pour gérer un abonnement Pro, quand celui-ci existera.",
-      en: "No. Free use requires no sign-up. An account will only become necessary to manage a Pro subscription, once that exists.",
+      fr: "Oui. Un compte gratuit est nécessaire pour utiliser les outils, même en formule Gratuite. Toutes les pages restent consultables sans compte, et vos fichiers restent sur votre appareil : le compte ne sert pas à les recevoir.",
+      en: "Yes. A free account is needed to use the tools, even on the Free plan. Every page can still be read without one, and your files stay on your device: the account is not there to receive them.",
     },
   },
   {

@@ -121,8 +121,8 @@ export function AdminMembers({
       {members.length === 0 ? (
         <Notice tone="info" className="mt-4">
           {fr
-            ? "Personne n'a encore créé de compte. C'est normal : tous les outils fonctionnent sans compte, et un compte ne sert qu'à gérer un abonnement Pro."
-            : "Nobody has created an account yet. That is expected: every tool works without one, and an account only exists to manage a Pro subscription."}
+            ? "Personne n'a encore créé de compte. Un compte est nécessaire pour utiliser les outils : les premiers inscrits apparaîtront ici."
+            : "Nobody has created an account yet. An account is needed to use the tools, so the first sign-ups will appear here."}
         </Notice>
       ) : (
         <>
@@ -212,8 +212,8 @@ export function AdminMembers({
 
           <p className="mt-2 text-[12px] leading-5 text-ink-soft">
             {fr
-              ? "Ce n'est pas le nombre de personnes qui utilisent le site : les outils fonctionnent sans compte, et la plupart des visiteurs n'apparaîtront jamais ici."
-              : "This is not how many people use the site: the tools work without an account, and most visitors will never appear here."}
+              ? "Tous ceux qui utilisent un outil ont un compte et figurent ici. Les visiteurs qui lisent seulement les pages, sans compte, n'y figurent pas."
+              : "Everyone who uses a tool has an account and appears here. Visitors who only read the pages, without an account, do not."}
           </p>
         </>
       )}

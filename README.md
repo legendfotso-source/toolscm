@@ -35,7 +35,8 @@ npm start             # serve the production build
 npm run typecheck     # tsc --noEmit
 npm run lint          # eslint
 
-npm run test:tools    # drive every tool in a real browser
+npm run test:tools    # drive every tool in a real browser (own build, accounts off)
+npm run test:access   # a signed-out visitor cannot use a tool (own build, accounts on)
 npm run test:db       # apply the migration to a throwaway PostgreSQL and check it
 npm run test:money    # run grantPro and settlePayment for real
 npm run test:payments # dates, receipts, plans, webhook signatures
@@ -189,10 +190,16 @@ up from the registry automatically.
 
 ## Verification
 
-`npm run test:tools` builds nothing itself; run `npm run build` first, then it
-starts the production server, drives Chromium through every tool, downloads the
-resulting files and inspects their bytes. A tool that quietly handed back its
-input would fail.
+`npm run test:tools` builds the site into `.next-tools` with the Supabase
+variables emptied (tools need an account whenever Supabase is configured, and
+a test robot is not signed into the live project), starts that build, drives
+Chromium through every tool, downloads the resulting files and inspects their
+bytes. A tool that quietly handed back its input would fail. `SKIP_BUILD=1`
+reuses the last build.
+
+`npm run test:access` does the opposite: it builds into `.next-access` with
+accounts switched on and checks, as a signed-out visitor, that the pages open
+but no tool can be used — in the page and at the server.
 
 At the last run: **38 / 38 checks passed**, including
 
@@ -229,11 +236,13 @@ launch** — everything else has been exercised against real files.
 (email/password and Google), the server-enforced daily limit, the paywall, and
 the admin dashboard at `/admin`.
 
-**Off by default, on purpose.** With no Supabase keys the site behaves exactly
-as it does without a database: every tool free, no limits, no accounts. Adding
-keys switches the layer on — and even then the daily limit stays off until you
-set `limits_enabled` in `/admin`. Nothing starts turning people away by
-accident.
+**Tools need an account.** As soon as Supabase keys are set, using a tool
+requires signing in (checked in the page and by `/api/usage`); every page stays
+public. With no Supabase keys there are no accounts to require, so the site
+behaves as it does without a database: every tool free, no limits. The daily
+limit stays off until you set `limits_enabled` in `/admin`. See DEPLOY.md,
+step 5, before going live: out of the box, Supabase does not send confirmation
+emails to the public.
 
 ### Setting it up
 

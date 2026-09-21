@@ -640,8 +640,8 @@ export const pdfTools: ToolDefinition[] = [
     },
     seoTitle: { fr: "Word en PDF — Tools.cm", en: "Word to PDF — Tools.cm" },
     seoDescription: {
-      fr: "Convertissez un document Word en PDF gratuitement, directement dans votre navigateur, sans compte et sans téléversement.",
-      en: "Convert a Word document to PDF for free, right in your browser, with no account and no upload.",
+      fr: "Convertissez un document Word en PDF gratuitement, directement dans votre navigateur, sans téléversement.",
+      en: "Convert a Word document to PDF for free, right in your browser, with no upload.",
     },
     keywords: ["word en pdf", "docx en pdf", "word to pdf", "doc en pdf"],
     faq: [

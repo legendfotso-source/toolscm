@@ -103,11 +103,13 @@ const document: LegalDocument = {
       heading: { fr: "Comptes et paiements", en: "Accounts and payments" },
       body: {
         fr: [
-          "L'usage gratuit ne demande aucun compte et nous ne collectons donc aucune donnée personnelle pour vous laisser utiliser les outils.",
+          "Utiliser les outils demande un compte. Pour ce compte, nous conservons votre adresse email, la façon dont vous vous êtes connecté (email ou Google, avec le nom et la photo que Google transmet), la date de création du compte et, si vous êtes abonné, votre formule et vos paiements. Nous ne conservons pas la liste des outils que vous utilisez sous votre compte : le décompte quotidien est tenu par appareil, sans lien avec votre adresse email. Vos fichiers ne nous sont jamais envoyés, compte ou pas.",
+          "Vous pouvez demander la suppression de votre compte et des données qui y sont liées à l'adresse indiquée plus bas.",
           "L'abonnement Pro n'est pas encore actif. Lorsqu'il le sera, il demandera une adresse email pour gérer l'abonnement, et le paiement sera traité par un prestataire de paiement. Nous ne verrons jamais votre numéro de carte ni le code de votre transaction Mobile Money : ces informations restent chez le prestataire. Cette page sera mise à jour avant toute activation.",
         ],
         en: [
-          "Free use requires no account, so we collect no personal data in order to let you use the tools.",
+          "Using the tools requires an account. For that account we keep your email address, how you signed in (email or Google, with the name and picture Google passes on), when the account was created and, if you subscribe, your plan and your payments. We do not keep a list of the tools you use under your account: the daily count is kept per device, with no link to your email address. Your files are never sent to us, account or not.",
+          "You can ask for your account and the data linked to it to be deleted at the address given below.",
           "The Pro subscription is not live yet. When it is, it will require an email address to manage the subscription, and payment will be handled by a payment provider. We will never see your card number or your Mobile Money transaction code: that information stays with the provider. This page will be updated before any activation.",
         ],
       },

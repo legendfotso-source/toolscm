@@ -140,6 +140,34 @@ In the Supabase dashboard → **Authentication → URL Configuration**:
 - **Site URL**: your Vercel address, e.g. `https://toolscm.vercel.app`
 - **Redirect URLs**: add `https://toolscm.vercel.app/**`
 
+The `/**` at the end matters: after signing in, people are sent back to the
+tool they were trying to use (`/auth/callback?next=/tool/merge-pdf`), and
+Supabase only allows that if the address matches this pattern.
+
+### Before anyone can use a tool: make sure people can create an account
+
+**Every tool now requires an account.** The pages stay public, but nobody can
+process a file without signing in. So if people cannot create an account,
+nobody can use the site. Two things in Supabase decide that, and **as they
+come out of the box, both block the public**:
+
+1. **Confirmation emails.** Supabase's built-in email sender is, in its own
+   documentation's words, "not meant for production use": it sends at most
+   **2 messages per hour**, and only to addresses that belong to your Supabase
+   team. Anyone else who signs up with an email address never receives the
+   confirmation link. Choose one:
+   - **Recommended:** connect a real email sender in Supabase → **Authentication
+     → Emails → SMTP settings** (Resend, Brevo and others have free plans).
+   - **Quicker:** switch off **Confirm email** for the Email provider. Accounts
+     then work immediately — the site sends people straight to their tool — but
+     nobody checks that the address is really theirs.
+2. **Google sign-in.** Until the Google Cloud consent screen is published
+   (see "Later, when you have a domain", step 5), only the test users you listed
+   in Google Cloud can sign in with Google.
+
+**Test it with an address that is not yours** — a friend's, or a second one
+that is not in your Supabase team — before telling anyone about the site.
+
 ---
 
 ## 6 — Become the administrator
@@ -231,6 +259,9 @@ visitors.
   It is almost always a missing environment variable.
 - **Sign-in loops back to the home page** — step 5 is missing or the address
   has a typo.
+- **People say they never received the confirmation email** — see "Before
+  anyone can use a tool", under step 5. Supabase's built-in sender only
+  delivers to your own team.
 - **`/admin` shows an error when you activate a plan, or a payment fails to
   record** — step 4 has not been run. Run `0002_tiers.sql` in the Supabase SQL
   editor, then try again. The same transaction id can safely be entered twice.

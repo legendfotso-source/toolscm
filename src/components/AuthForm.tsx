@@ -3,12 +3,32 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { safeNext, signInHref } from "@/lib/auth/access";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { browserClient } from "@/lib/supabase/browser";
 import { Button, Notice, SectionHeading } from "./ui";
 import { Breadcrumbs } from "./Breadcrumbs";
 
 type Mode = "signin" | "signup";
+
+/**
+ * Where to go once signed in: the `next` the visitor arrived with (a tool
+ * they tried to use, the pricing page), or their account.
+ *
+ * Read from the address bar at the moment it is needed rather than through
+ * useSearchParams, which would force this statically rendered page into a
+ * Suspense boundary for one value only an event handler reads. Always passed
+ * through safeNext: `next` is part of a URL anyone can craft.
+ */
+function nextPath(): string {
+  if (typeof window === "undefined") return "/account";
+  return safeNext(new URLSearchParams(window.location.search).get("next"));
+}
+
+/** The /auth/callback address that ends at `nextPath()`. */
+function callbackUrl(): string {
+  return `${window.location.origin}/auth/callback?next=${encodeURIComponent(nextPath())}`;
+}
 
 export function AuthForm({ mode }: { mode: Mode }) {
   const { t } = useLocale();
@@ -45,12 +65,21 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
     try {
       if (mode === "signup") {
-        const { error: signUpError } = await client.auth.signUp({
+        const { data, error: signUpError } = await client.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+          options: { emailRedirectTo: callbackUrl() },
         });
         if (signUpError) throw signUpError;
+        if (data.session) {
+          // Email confirmation is switched off in Supabase, so the account is
+          // usable at once. Telling this person to go and check their inbox
+          // for a message that will never come would strand them — and now
+          // that the tools need an account, strand them outside every tool.
+          router.push(nextPath());
+          router.refresh();
+          return;
+        }
         setSent(true);
       } else {
         const { error: signInError } = await client.auth.signInWithPassword({
@@ -58,7 +87,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
           password,
         });
         if (signInError) throw signInError;
-        router.push("/account");
+        router.push(nextPath());
         router.refresh();
       }
     } catch (caught) {
@@ -73,7 +102,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
     setBusy(true);
     const { error: oauthError } = await client.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: callbackUrl() },
     });
     if (oauthError) {
       setError(t("auth.unexpected"));
@@ -176,6 +205,12 @@ export function AuthForm({ mode }: { mode: Mode }) {
               {mode === "signup" ? t("auth.hasAccount") : t("auth.noAccount")}{" "}
               <Link
                 href={mode === "signup" ? "/signin" : "/signup"}
+                // Switching between the two forms keeps the way back to the
+                // tool the visitor came from.
+                onClick={(event) => {
+                  event.preventDefault();
+                  router.push(signInHref(nextPath(), mode === "signup" ? "signin" : "signup"));
+                }}
                 className="font-semibold text-violet-deep underline-offset-2 hover:underline"
               >
                 {mode === "signup" ? t("auth.signIn") : t("auth.signUp")}

@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     template: "%s — Tools.cm",
   },
   description:
-    "Compressez, fusionnez, convertissez et modifiez vos fichiers PDF et vos images directement dans votre navigateur. Gratuit, sans compte, et vos fichiers ne quittent pas votre appareil.",
+    "Compressez, fusionnez, convertissez et modifiez vos fichiers PDF et vos images directement dans votre navigateur. Gratuit avec un compte, et vos fichiers ne quittent pas votre appareil.",
   applicationName: SITE_NAME,
   keywords: [
     "compresser pdf",

@@ -5,6 +5,10 @@ import type { ComponentType } from "react";
 import type { ToolDefinition } from "@/types/tool";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { ButtonLink, Notice } from "./ui";
+import { useAuthUser } from "@/lib/useAuthUser";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { accountRequired } from "@/lib/auth/access";
+import { SignInRequired } from "./SignInRequired";
 
 type RunnerProps = { tool: ToolDefinition };
 
@@ -85,5 +89,28 @@ export function ToolRunner({ tool }: RunnerProps) {
     );
   }
 
+  return <SignedInOnly tool={tool} Runner={Runner} />;
+}
+
+/**
+ * The tool, for signed-in visitors only.
+ *
+ * The check happens before the tool's code is loaded: `Runner` is a lazy
+ * import, so a signed-out visitor never downloads pdf-lib or the segmentation
+ * model for a tool they cannot use. While the session is still being read the
+ * skeleton stays up, so a signed-in visitor never sees the sign-in panel flash.
+ */
+function SignedInOnly({
+  tool,
+  Runner,
+}: {
+  tool: ToolDefinition;
+  Runner: ComponentType<RunnerProps>;
+}) {
+  const auth = useAuthUser();
+
+  if (!accountRequired(isSupabaseConfigured())) return <Runner tool={tool} />;
+  if (!auth.known) return <Loading />;
+  if (!auth.user) return <SignInRequired path={`/tool/${tool.id}`} />;
   return <Runner tool={tool} />;
 }

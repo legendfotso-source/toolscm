@@ -5,6 +5,8 @@ import { consumeOperation, peekUsage } from "@/lib/usage/server";
 import { getToolIds } from "@/lib/tools/registry";
 import { getSettings } from "@/lib/settings";
 import { tierPriceXaf } from "@/lib/payments/tiers";
+import { signInGate } from "@/lib/auth/access";
+import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 // This route must never be cached: the answer depends on who is asking and
 // how many operations they have already used today.
@@ -41,7 +43,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid_body" }, { status: 400 });
   }
 
-  const { tier, isPro } = await getEntitlement();
+  const { tier, isPro, userId } = await getEntitlement();
+
+  // Tools require an account. Refused here, before anything is counted, so a
+  // signed-out visitor cannot run an operation by calling this endpoint
+  // directly. 401 is the honest status: "who are you?", not "you have run out".
+  if (signInGate(isSupabaseConfigured(), userId) === "sign_in_required") {
+    return NextResponse.json({ error: "sign_in_required" }, { status: 401 });
+  }
 
   const verdict = await consumeOperation({
     deviceId: parsed.data.deviceId,

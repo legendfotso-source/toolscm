@@ -21,11 +21,11 @@ const document: LegalDocument = {
       heading: { fr: "Le service", en: "The service" },
       body: {
         fr: [
-          "Tools.cm met à disposition des outils de traitement de fichiers PDF et image qui s'exécutent dans votre navigateur. L'usage gratuit ne demande pas de compte.",
+          "Tools.cm met à disposition des outils de traitement de fichiers PDF et image qui s'exécutent dans votre navigateur. Leur utilisation nécessite un compte, gratuit. Les pages du site restent consultables sans compte.",
           "Nous publions un outil uniquement lorsqu'il fonctionne réellement. Un outil marqué « Bientôt disponible » n'est pas utilisable, et nous ne simulons jamais un traitement.",
         ],
         en: [
-          "Tools.cm provides PDF and image processing tools that run in your browser. Free use requires no account.",
+          "Tools.cm provides PDF and image processing tools that run in your browser. Using them requires an account, which is free. The site's pages can be read without one.",
           "We publish a tool only once it genuinely works. A tool marked \"Coming soon\" is not usable, and we never simulate processing.",
         ],
       },

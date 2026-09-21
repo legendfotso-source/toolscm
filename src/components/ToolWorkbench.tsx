@@ -16,6 +16,7 @@ import type {
 import { useUsage } from "@/lib/usage/useUsage";
 import { UploadZone } from "./UploadZone";
 import { PaywallModal } from "./PaywallModal";
+import { SignInRequired } from "./SignInRequired";
 import { UsageCounter } from "./UsageCounter";
 import { FileList } from "./FileList";
 import { ProcessingState } from "./ProcessingState";
@@ -69,6 +70,7 @@ export function ToolWorkbench({
   const usage = useUsage();
   const tier: TierId = usage.tier;
   const [paywallOpen, setPaywallOpen] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // A preview of the input, so image results can be shown side by side.
   const originalPreview = useImageObjectUrl(files[0]);
@@ -158,6 +160,14 @@ export function ToolWorkbench({
     // from the session cookie and the database, never from this page — there
     // is no "isPro" flag here for anyone to edit in dev tools.
     const permission = await usage.claim(tool.id);
+    if (permission.signInRequired) {
+      // The session ran out after the page opened. The server has refused;
+      // say why and offer the way back, rather than a paywall that would
+      // suggest the problem is money.
+      setSessionExpired(true);
+      setPhase("ready");
+      return;
+    }
     if (!permission.allowed) {
       setPaywallOpen(true);
       setPhase("ready");
@@ -222,6 +232,10 @@ export function ToolWorkbench({
       prices={usage.prices ?? undefined}
     />
   );
+
+  if (sessionExpired) {
+    return <SignInRequired path={`/tool/${tool.id}`} expired />;
+  }
 
   if (phase === "running") {
     return (

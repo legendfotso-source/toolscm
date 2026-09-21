@@ -174,7 +174,7 @@
     "freeFeature1": "3 opérations par jour",
     "freeFeature2": "Tous les outils standards",
     "freeFeature3": "Jusqu'à 3 fichiers à la fois",
-    "freeFeature4": "Aucun compte requis",
+    "freeFeature4": "Compte gratuit requis",
     "freeFeature5": "Avec publicité",
     "proName": "Pro",
     "proPeriod": "par mois",
@@ -187,7 +187,7 @@
     "proFeature5": "Support prioritaire",
     "proNote": "Le traitement se faisant sur votre appareil, la vitesse et la taille maximale des fichiers dépendent de votre téléphone ou ordinateur.",
     "comingSoonTitle": "Les paiements arrivent bientôt",
-    "comingSoonText": "L'abonnement Pro (Mobile Money et carte bancaire) est en cours de mise en place. En attendant, tous les outils publiés sont utilisables gratuitement, sans compte et sans limite quotidienne : la limite de 3 opérations par jour décrite ci-dessous n'est pas encore appliquée.",
+    "comingSoonText": "L'abonnement Pro (Mobile Money et carte bancaire) est en cours de mise en place. En attendant, tous les outils publiés sont utilisables gratuitement avec un compte, et sans limite quotidienne : la limite de 3 opérations par jour décrite ci-dessous n'est pas encore appliquée.",
     "faqTitle": "Questions sur les tarifs",
     "maxName": "Max",
     "maxPeriod": "par mois",
@@ -277,6 +277,13 @@
     "generate": "Générer",
     "download": "Télécharger"
   },
+  "access": {
+    "title": "Connectez-vous pour utiliser cet outil",
+    "text": "Les outils de Tools.cm sont réservés aux membres. Créez un compte en une minute, puis vous revenez directement ici. Vos fichiers restent sur votre appareil, comme avant.",
+    "free": "Le compte est gratuit et donne droit aux opérations gratuites de chaque jour.",
+    "expiredTitle": "Votre session a expiré",
+    "expiredText": "Reconnectez-vous pour continuer. Vous reviendrez sur cet outil ; il faudra seulement choisir votre fichier à nouveau."
+  },
   "auth": {
     "signIn": "Se connecter",
     "signUp": "Créer un compte",
@@ -285,7 +292,7 @@
     "password": "Mot de passe",
     "signInTitle": "Connexion à votre compte",
     "signUpTitle": "Créer un compte Tools.cm",
-    "signInSubtitle": "Un compte n'est nécessaire que pour gérer un abonnement Pro. Tous les outils restent utilisables sans compte.",
+    "signInSubtitle": "Un compte gratuit est nécessaire pour utiliser les outils. Vos fichiers, eux, restent sur votre appareil.",
     "noAccount": "Pas encore de compte ?",
     "hasAccount": "Vous avez déjà un compte ?",
     "continueGoogle": "Continuer avec Google",

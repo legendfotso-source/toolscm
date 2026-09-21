@@ -174,7 +174,7 @@
     "freeFeature1": "3 operations per day",
     "freeFeature2": "All standard tools",
     "freeFeature3": "Up to 3 files at a time",
-    "freeFeature4": "No account required",
+    "freeFeature4": "Free account required",
     "freeFeature5": "With advertising",
     "proName": "Pro",
     "proPeriod": "per month",
@@ -187,7 +187,7 @@
     "proFeature5": "Priority support",
     "proNote": "Because processing happens on your device, speed and maximum file size depend on your phone or computer.",
     "comingSoonTitle": "Payments are coming soon",
-    "comingSoonText": "Pro subscriptions (Mobile Money and card) are being set up. In the meantime every published tool is free to use, with no account and no daily limit: the 3-operations-a-day limit described below is not enforced yet.",
+    "comingSoonText": "Pro subscriptions (Mobile Money and card) are being set up. In the meantime every published tool is free to use with an account, and with no daily limit: the 3-operations-a-day limit described below is not enforced yet.",
     "faqTitle": "Pricing questions",
     "maxName": "Max",
     "maxPeriod": "per month",
@@ -277,6 +277,13 @@
     "generate": "Generate",
     "download": "Download"
   },
+  "access": {
+    "title": "Sign in to use this tool",
+    "text": "Tools.cm tools are for members. Create an account in a minute and you come straight back here. Your files stay on your device, as before.",
+    "free": "The account is free and includes the free operations every day.",
+    "expiredTitle": "Your session has expired",
+    "expiredText": "Sign in again to carry on. You will come back to this tool; you will only need to choose your file again."
+  },
   "auth": {
     "signIn": "Sign in",
     "signUp": "Create an account",
@@ -285,7 +292,7 @@
     "password": "Password",
     "signInTitle": "Sign in to your account",
     "signUpTitle": "Create a Tools.cm account",
-    "signInSubtitle": "An account is only needed to manage a Pro subscription. Every tool stays usable without one.",
+    "signInSubtitle": "A free account is needed to use the tools. Your files still stay on your device.",
     "noAccount": "No account yet?",
     "hasAccount": "Already have an account?",
     "continueGoogle": "Continue with Google",

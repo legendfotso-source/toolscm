@@ -82,7 +82,9 @@ export function useUsage() {
    * occasionally gives away an extra operation.
    */
   const claim = useCallback(
-    async (tool: string): Promise<{ allowed: boolean; remaining: number }> => {
+    async (
+      tool: string,
+    ): Promise<{ allowed: boolean; remaining: number; signInRequired?: boolean }> => {
       if (!configured) return { allowed: true, remaining: -1 };
 
       try {
@@ -91,6 +93,12 @@ export function useUsage() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ deviceId: deviceId(), tool }),
         });
+
+        // The session has expired, or was never there. Unlike an unreachable
+        // server, this is a real "no": the operation must not go ahead.
+        if (response.status === 401) {
+          return { allowed: false, remaining: 0, signInRequired: true };
+        }
 
         if (response.status === 402) {
           const data = (await response.json()) as Omit<UsageState, "known">;

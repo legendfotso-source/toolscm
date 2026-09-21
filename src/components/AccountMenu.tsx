@@ -18,9 +18,9 @@ import { cx } from "./ui";
  * find the door, so the honest report was "there is no Google sign-in" — and
  * from the outside that is exactly what it looked like.
  *
- * With no database configured the whole thing renders nothing. The site is
- * usable without an account by design, and an account button that leads to a
- * page saying "accounts are not available" is worse than no button.
+ * With no database configured the whole thing renders nothing: there are no
+ * accounts to sign in to, and an account button that leads to a page saying
+ * "accounts are not available" is worse than no button.
  */
 export function AccountMenu({ variant = "desktop" }: { variant?: "desktop" | "mobile" }) {
   const { t } = useLocale();
