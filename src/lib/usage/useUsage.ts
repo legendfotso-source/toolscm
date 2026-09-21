@@ -12,6 +12,11 @@ export type UsageState = {
   isPro: boolean;
   /** Which plan the SERVER says this person is on. Never set by the browser. */
   tier: TierId;
+  /**
+   * Monthly price of each paid plan, as the server's settings have it. Null
+   * until the server has answered, and when there is no server to ask.
+   */
+  prices: { pro: number; max: number } | null;
   /** False until we have heard from the server at least once. */
   known: boolean;
 };
@@ -23,6 +28,7 @@ const NO_LIMIT: Omit<UsageState, "known"> = {
   // Free until the server says otherwise. Defaulting the other way would
   // hand out Pro batch sizes to everyone for the first second of every page.
   tier: "free",
+  prices: null,
 };
 
 export function useUsage() {
@@ -42,7 +48,7 @@ export function useUsage() {
         return;
       }
       const data = (await response.json()) as Omit<UsageState, "known">;
-      setState({ ...data, known: true });
+      setState({ ...NO_LIMIT, ...data, known: true });
     } catch {
       // Offline, or the endpoint is unreachable. Showing no counter is better
       // than showing a wrong one.
@@ -88,14 +94,16 @@ export function useUsage() {
 
         if (response.status === 402) {
           const data = (await response.json()) as Omit<UsageState, "known">;
-          setState({ ...data, known: true });
+          // Merged, not replaced: the POST answer carries no prices, and the
+          // paywall that opens next needs the ones the GET brought.
+          setState((previous) => ({ ...previous, ...data, known: true }));
           return { allowed: false, remaining: 0 };
         }
 
         if (!response.ok) return { allowed: true, remaining: -1 };
 
         const data = (await response.json()) as Omit<UsageState, "known">;
-        setState({ ...data, known: true });
+        setState((previous) => ({ ...previous, ...data, known: true }));
         return { allowed: true, remaining: data.remaining };
       } catch {
         return { allowed: true, remaining: -1 };

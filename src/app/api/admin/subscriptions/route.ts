@@ -134,6 +134,7 @@ export async function POST(request: Request) {
             paidAt: result.paidAt ?? new Date().toISOString(),
             proUntil: result.proUntil,
             days: result.days,
+            tier: parsed.data.tier,
           }
         : null,
     });

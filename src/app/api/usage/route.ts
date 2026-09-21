@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getEntitlement } from "@/lib/entitlement";
 import { consumeOperation, peekUsage } from "@/lib/usage/server";
 import { getToolIds } from "@/lib/tools/registry";
+import { getSettings } from "@/lib/settings";
+import { tierPriceXaf } from "@/lib/payments/tiers";
 
 // This route must never be cached: the answer depends on who is asking and
 // how many operations they have already used today.
@@ -71,6 +73,7 @@ export async function GET(request: Request) {
 
   const { tier, isPro } = await getEntitlement();
   const verdict = await peekUsage(deviceId, tier);
+  const settings = await getSettings();
 
   return NextResponse.json({
     used: verdict.used,
@@ -78,5 +81,13 @@ export async function GET(request: Request) {
     reason: verdict.reason,
     isPro,
     tier,
+    // The monthly price of each paid plan, so the paywall inside a tool
+    // quotes what the checkout would actually charge rather than a number
+    // baked into the page at build time. Public information — it is on the
+    // pricing page — so nothing is revealed by sending it here.
+    prices: {
+      pro: tierPriceXaf(settings.price_xaf, "pro"),
+      max: tierPriceXaf(settings.price_xaf, "max"),
+    },
   });
 }

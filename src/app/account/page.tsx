@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { AccountContent } from "@/components/AccountContent";
 import { getEntitlement } from "@/lib/entitlement";
 import { getSettings } from "@/lib/settings";
+import { tierPriceXaf } from "@/lib/payments/tiers";
 import { currentUser } from "@/lib/supabase/server-client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { adminClient } from "@/lib/supabase/admin";
@@ -38,7 +39,7 @@ export default async function AccountPage() {
   const user = await currentUser();
   if (!user) redirect("/signin");
 
-  const { isPro, proUntil } = await getEntitlement();
+  const { isPro, tier, proUntil } = await getEntitlement();
   const settings = await getSettings();
 
   // Read straight off the session rather than from a profile row a person
@@ -56,6 +57,8 @@ export default async function AccountPage() {
       provider={user.app_metadata?.provider ?? "email"}
       memberSince={user.created_at ?? null}
       isPro={isPro}
+      tier={tier}
+      prices={{ pro: tierPriceXaf(settings.price_xaf, "pro"), max: tierPriceXaf(settings.price_xaf, "max") }}
       proUntil={proUntil}
       dailyLimit={settings.limits_enabled ? settings.free_daily_limit : null}
       configured

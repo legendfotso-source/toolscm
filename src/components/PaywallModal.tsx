@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { ManualPayment } from "./ManualPayment";
+import { PRICE_XAF } from "@/lib/site";
+import { formatXaf } from "@/lib/payments/format";
 import { Button, ButtonLink } from "./ui";
 
 /**
@@ -11,19 +13,23 @@ import { Button, ButtonLink } from "./ui";
  *
  * Deliberately not a trap: Escape closes it, the backdrop closes it, and
  * "continue free tomorrow" is a real, prominent option. Someone who cannot
- * afford 2,000 FCFA this month should leave with their dignity intact and come
+ * afford a subscription this month should leave with their dignity intact and come
  * back tomorrow, not feel cornered.
  */
 export function PaywallModal({
   open,
   onClose,
   paymentsEnabled = false,
+  prices,
 }: {
   open: boolean;
   onClose: () => void;
   paymentsEnabled?: boolean;
+  /** Monthly price of each paid plan, from the server. */
+  prices?: { pro: number; max: number };
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const fr = locale === "fr";
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -111,7 +117,7 @@ export function PaywallModal({
 
         <p className="mt-5 flex items-baseline gap-1.5">
           <span className="text-[28px] font-extrabold tracking-[-0.02em] text-ink">
-            {t("pricing.proPrice")}
+            {formatXaf(prices?.pro ?? PRICE_XAF, fr)}
           </span>
           <span className="text-[14px] text-ink-soft">/ {t("pricing.proPeriod")}</span>
         </p>
@@ -136,7 +142,7 @@ export function PaywallModal({
             // nowhere, show the way money actually changes hands today — or,
             // if no Mobile Money number is configured either, say plainly that
             // payment is not available yet.
-            <ManualPayment compact />
+            <ManualPayment compact prices={prices} />
           )}
 
           <Button variant="ghost" size="lg" className="w-full" onClick={onClose}>

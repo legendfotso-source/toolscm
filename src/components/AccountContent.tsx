@@ -1,6 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { TIERS, tierName, type TierId } from "@/lib/payments/tiers";
+import type { PaidTier } from "@/lib/payments/plans";
 import { useState } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { browserClient } from "@/lib/supabase/browser";
@@ -17,6 +19,8 @@ export function AccountContent({
   provider,
   memberSince,
   isPro,
+  tier = isPro ? "pro" : "free",
+  prices,
   proUntil,
   dailyLimit,
   configured,
@@ -28,6 +32,10 @@ export function AccountContent({
   provider: string | null;
   memberSince: string | null;
   isPro: boolean;
+  /** Which plan the database says this person is on. */
+  tier?: TierId;
+  /** Monthly price of each paid plan, from the server's settings. */
+  prices?: Record<PaidTier, number>;
   proUntil: string | null;
   /** The free allowance, or null while the limit is switched off. */
   dailyLimit: number | null;
@@ -130,9 +138,9 @@ export function AccountContent({
                 </p>
                 <div className="mt-1.5 flex items-center gap-2">
                   <span className="text-[17px] font-bold text-ink">
-                    {isPro ? t("auth.planPro") : t("auth.planFree")}
+                    {tierName(tier, fr)}
                   </span>
-                  {isPro ? <Badge tone="violet">{t("auth.planPro")}</Badge> : null}
+                  {isPro ? <Badge tone="violet">{tierName(tier, fr)}</Badge> : null}
                 </div>
                 {isPro && until ? (
                   <p className="mt-1 text-[13.5px] text-ink-soft">
@@ -146,15 +154,15 @@ export function AccountContent({
                 <p className="mt-2 text-[13px] leading-5 text-ink-soft">
                   {isPro
                     ? fr
-                      ? "Usage étendu, sans limite quotidienne, et traitement par lot sur les outils compatibles."
-                      : "Extended use, no daily limit, and batch processing on the tools that support it."
+                      ? `Usage étendu, sans limite quotidienne, jusqu'à ${TIERS[tier].batchFiles} fichiers à la fois sur les outils compatibles.`
+                      : `Extended use, no daily limit, up to ${TIERS[tier].batchFiles} files at a time on the tools that support it.`
                     : dailyLimit === null
                       ? fr
                         ? "Tous les outils sont actuellement illimités pour tout le monde."
                         : "Every tool is currently unlimited for everybody."
                       : fr
-                        ? `${dailyLimit} opérations par jour, un fichier à la fois.`
-                        : `${dailyLimit} operations a day, one file at a time.`}
+                        ? `${dailyLimit} opérations par jour, jusqu'à ${TIERS.free.batchFiles} fichiers à la fois.`
+                        : `${dailyLimit} operations a day, up to ${TIERS.free.batchFiles} files at a time.`}
                 </p>
               </div>
             </div>
@@ -167,24 +175,24 @@ export function AccountContent({
                   const left = daysUntil(proUntil);
                   if (left <= 0) {
                     return locale === "fr"
-                      ? "Votre accès Pro se termine aujourd'hui."
-                      : "Your Pro access ends today.";
+                      ? `Votre accès ${tierName(tier, true)} se termine aujourd'hui.`
+                      : `Your ${tierName(tier, false)} access ends today.`;
                   }
                   if (left === 1) {
                     return locale === "fr"
-                      ? "Votre accès Pro se termine demain. Renouvelez pour ne pas être interrompu."
-                      : "Your Pro access ends tomorrow. Renew to avoid an interruption.";
+                      ? `Votre accès ${tierName(tier, true)} se termine demain. Renouvelez pour ne pas être interrompu.`
+                      : `Your ${tierName(tier, false)} access ends tomorrow. Renew to avoid an interruption.`;
                   }
                   return locale === "fr"
-                    ? `Votre accès Pro se termine dans ${left} jours.`
-                    : `Your Pro access ends in ${left} days.`;
+                    ? `Votre accès ${tierName(tier, true)} se termine dans ${left} jours.`
+                    : `Your ${tierName(tier, false)} access ends in ${left} days.`;
                 })()}
               </Notice>
             ) : null}
 
             {!isPro || (proUntil && daysUntil(proUntil) <= REMIND_WITHIN_DAYS) ? (
               <div className="mt-4">
-                <ManualPayment />
+                <ManualPayment prices={prices} />
               </div>
             ) : null}
 
@@ -246,7 +254,7 @@ function ReceiptRow({ receipt, locale }: { receipt: Receipt; locale: string }) {
       <p className="mt-1 text-[13px] text-ink-soft">{paid}</p>
       {receipt.proUntil ? (
         <p className="mt-0.5 text-[13px] text-ink-soft">
-          {fr ? "Pro actif jusqu'au " : "Pro active until "}
+          {fr ? "Actif jusqu'au " : "Active until "}
           <strong className="text-ink">
             {new Intl.DateTimeFormat(fr ? "fr-FR" : "en-GB", {
               day: "numeric",

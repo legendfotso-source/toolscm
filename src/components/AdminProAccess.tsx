@@ -3,7 +3,10 @@
 import { useState } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { type Receipt, receiptMessage, whatsappNumber } from "@/lib/payments/receipt";
-import { Button, Card, Notice } from "./ui";
+import { tierName, tierPriceXaf } from "@/lib/payments/tiers";
+import type { PaidTier } from "@/lib/payments/plans";
+import { formatXaf } from "@/lib/payments/format";
+import { Button, Card, Notice, cx } from "./ui";
 
 type Outcome =
   | { kind: "idle" }
@@ -13,10 +16,10 @@ type Outcome =
   | { kind: "error"; message: string };
 
 /**
- * Activate Pro for someone who paid by Mobile Money, then thank them.
+ * Activate Pro or Max for someone who paid by Mobile Money, then thank them.
  *
- * The honest first version of taking money here: the customer sends 2,000 FCFA
- * to the MTN or Orange number, you read the transaction id off the
+ * The honest first version of taking money here: the customer sends the price
+ * of the plan they chose to the MTN or Orange number, you read the transaction id off the
  * confirmation SMS, and you type it in. No payment API, no webhook, nothing
  * pretending to be automatic — and the money is genuinely in the account
  * before anyone gets anything.
@@ -29,6 +32,7 @@ type Outcome =
 export function AdminProAccess({ priceXaf }: { priceXaf: number }) {
   const { locale } = useLocale();
   const fr = locale === "fr";
+  const [tier, setTier] = useState<PaidTier>("pro");
 
   const [email, setEmail] = useState("");
   const [transactionId, setTransactionId] = useState("");
@@ -92,9 +96,18 @@ export function AdminProAccess({ priceXaf }: { priceXaf: number }) {
     }
   };
 
+  // Choosing a plan resets the amount to that plan's monthly price, computed
+  // by the same rule the site shows customers. It stays editable: someone
+  // who paid for three months sent a different amount.
+  const chooseTier = (next: PaidTier) => {
+    setTier(next);
+    setAmount(String(tierPriceXaf(priceXaf, next)));
+  };
+
   const grant = () =>
     post({
       action: "grant",
+      tier,
       email: email.trim(),
       transactionId: transactionId.trim(),
       amount: Number(amount),
@@ -113,8 +126,8 @@ export function AdminProAccess({ priceXaf }: { priceXaf: number }) {
     <Card className="p-5">
       <h2 className="text-[16px] font-bold text-ink">
         {fr
-          ? "Activer Pro après un paiement Mobile Money"
-          : "Activate Pro after a Mobile Money payment"}
+          ? "Activer un abonnement après un paiement Mobile Money"
+          : "Activate a plan after a Mobile Money payment"}
       </h2>
       <p className="mt-1.5 text-[13px] leading-5 text-ink-soft">
         {fr
@@ -123,6 +136,25 @@ export function AdminProAccess({ priceXaf }: { priceXaf: number }) {
       </p>
 
       <div className="mt-4 space-y-3">
+        <div className="grid grid-cols-2 gap-2" role="group" aria-label={fr ? "Formule" : "Plan"}>
+          {(["pro", "max"] as PaidTier[]).map((id) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => chooseTier(id)}
+              aria-pressed={id === tier}
+              className={cx(
+                "min-h-11 rounded-xl border px-3 py-2 text-left",
+                id === tier ? "border-violet-deep bg-violet-light ring-1 ring-violet-deep" : "border-line bg-white",
+              )}
+            >
+              <span className="block text-[14px] font-bold text-ink">{tierName(id, fr)}</span>
+              <span className="block text-[12.5px] tabular-nums text-ink-soft">
+                {formatXaf(tierPriceXaf(priceXaf, id), fr)} {fr ? "/ mois" : "/ month"}
+              </span>
+            </button>
+          ))}
+        </div>
         <Field
           label={fr ? "Adresse e-mail du compte" : "Account email address"}
           value={email}
@@ -178,7 +210,7 @@ export function AdminProAccess({ priceXaf }: { priceXaf: number }) {
 
       {outcome.kind === "revoked" ? (
         <Notice tone="success" className="mt-4">
-          {fr ? "L'accès Pro a été retiré." : "Pro access has been removed."}
+          {fr ? "L'abonnement a été retiré." : "The plan has been removed."}
         </Notice>
       ) : null}
 
@@ -195,7 +227,7 @@ export function AdminProAccess({ priceXaf }: { priceXaf: number }) {
 
       <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
         <Button size="lg" className="flex-1" onClick={grant} disabled={!ready || busy}>
-          {busy ? "..." : fr ? "Activer Pro" : "Activate Pro"}
+          {busy ? "..." : fr ? `Activer ${tierName(tier, fr)}` : `Activate ${tierName(tier, fr)}`}
         </Button>
         <Button
           size="lg"

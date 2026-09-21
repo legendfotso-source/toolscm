@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { PricingContent } from "@/components/PricingContent";
 import { getSettings } from "@/lib/settings";
-import { plans } from "@/lib/payments/plans";
+import { pricesByTier } from "@/lib/payments/plans";
 import { notchpayConfigured } from "@/lib/payments/providers/notchpay";
 import { campayConfigured } from "@/lib/payments/providers/campay";
 import { stripeConfigured } from "@/lib/payments/providers/stripe";
@@ -34,7 +34,7 @@ export default async function PricingPage() {
       campay={live && campayConfigured()}
       stripe={live && stripeConfigured()}
       signedIn={Boolean(user)}
-      plansAvailable={plans(settings.price_xaf)}
+      prices={pricesByTier(settings)}
     />
   );
 }

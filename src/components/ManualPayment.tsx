@@ -8,7 +8,11 @@ import {
   SUPPORT_WHATSAPP,
   isManualPaymentAvailable,
 } from "@/lib/site";
-import { Notice } from "./ui";
+import { useState } from "react";
+import { tierName, tierPriceXaf } from "@/lib/payments/tiers";
+import type { PaidTier } from "@/lib/payments/plans";
+import { formatXaf } from "@/lib/payments/format";
+import { Notice, cx } from "./ui";
 
 /**
  * How to pay, before there is a payment API.
@@ -23,19 +27,38 @@ import { Notice } from "./ui";
  * because a customer on Orange sending to MTN pays a transfer fee on top of
  * the subscription, and some of them will just abandon the payment.
  */
-export function ManualPayment({ compact = false }: { compact?: boolean }) {
+export function ManualPayment({
+  compact = false,
+  prices,
+}: {
+  compact?: boolean;
+  /**
+   * Monthly price of each paid tier, from the server's settings. Places that
+   * cannot pass it (the paywall inside a tool) fall back to the published
+   * default, priced by the same rule the checkout uses.
+   */
+  prices?: Record<PaidTier, number>;
+}) {
   const { t, locale } = useLocale();
   const fr = locale === "fr";
+  const [tier, setTier] = useState<PaidTier>("pro");
 
   if (!isManualPaymentAvailable()) {
     return <Notice tone="warn">{t("paywall.unavailable")}</Notice>;
   }
 
-  const price = PRICE_XAF.toLocaleString(fr ? "fr-FR" : "en-GB");
+  const amounts: Record<PaidTier, number> = prices ?? {
+    pro: PRICE_XAF,
+    max: tierPriceXaf(PRICE_XAF, "max"),
+  };
+  const price = formatXaf(amounts[tier], fr);
+  const plan = tierName(tier, fr);
 
+  // The tier is in the message so the admin activates what was paid for,
+  // not whatever is the default in /admin.
   const message = fr
-    ? `Bonjour, je viens d'envoyer ${price} FCFA pour Tools.cm Pro.\nOpérateur : \nID de transaction : \nE-mail de mon compte : `
-    : `Hello, I have just sent ${price} FCFA for Tools.cm Pro.\nOperator: \nTransaction id: \nMy account email: `;
+    ? `Bonjour, je viens d'envoyer ${price} pour Tools.cm ${plan} (1 mois).\nOpérateur : \nID de transaction : \nE-mail de mon compte : `
+    : `Hello, I have just sent ${price} for Tools.cm ${plan} (1 month).\nOperator: \nTransaction id: \nMy account email: `;
 
   return (
     <div
@@ -49,6 +72,26 @@ export function ManualPayment({ compact = false }: { compact?: boolean }) {
         {fr ? "Payer par Mobile Money" : "Pay by Mobile Money"}
       </p>
 
+      <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label={fr ? "Formule" : "Plan"}>
+        {(["pro", "max"] as PaidTier[]).map((id) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTier(id)}
+            aria-pressed={id === tier}
+            className={cx(
+              "min-h-11 rounded-xl border px-3 py-2 text-left",
+              id === tier ? "border-violet-deep bg-white ring-1 ring-violet-deep" : "border-violet-border bg-white/60",
+            )}
+          >
+            <span className="block text-[14px] font-bold text-ink">{tierName(id, fr)}</span>
+            <span className="block text-[12.5px] tabular-nums text-ink-soft">
+              {formatXaf(amounts[id], fr)} {fr ? "/ mois" : "/ month"}
+            </span>
+          </button>
+        ))}
+      </div>
+
       {/* Step 1 — the numbers, given the most room, because this is the step
           someone will be reading off their screen while dialling. */}
       <div className="mt-3 flex gap-2.5">
@@ -56,7 +99,7 @@ export function ManualPayment({ compact = false }: { compact?: boolean }) {
         <div className="min-w-0 flex-1">
           <p className="text-[14px] leading-6 text-ink">
             {fr ? "Envoyez " : "Send "}
-            <strong>{price} FCFA</strong>
+            <strong>{price}</strong>
             {fr ? " à l'un de ces numéros :" : " to either of these numbers:"}
           </p>
 
@@ -114,8 +157,8 @@ export function ManualPayment({ compact = false }: { compact?: boolean }) {
         <StepNumber n={3} />
         <p className="flex-1 text-[14px] leading-6 text-ink">
           {fr
-            ? "Votre accès Pro est activé et vous recevez un reçu sur WhatsApp, généralement en moins de 24 heures."
-            : "Your Pro access is activated and you get a receipt on WhatsApp, usually within 24 hours."}
+            ? `Votre accès ${plan} est activé et vous recevez un reçu sur WhatsApp, généralement en moins de 24 heures.`
+            : `Your ${plan} access is activated and you get a receipt on WhatsApp, usually within 24 hours.`}
         </p>
       </div>
 

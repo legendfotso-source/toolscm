@@ -9,7 +9,8 @@ import { CheckoutButtons } from "./CheckoutButtons";
 import { Card, Notice, SectionHeading } from "./ui";
 import { isManualPaymentAvailable } from "@/lib/site";
 import { TIER_IDS, TIERS } from "@/lib/payments/tiers";
-import type { Plan } from "@/lib/payments/plans";
+import type { PaidTier, Plan } from "@/lib/payments/plans";
+import { formatUsd, formatXaf } from "@/lib/payments/format";
 import type { ToolFaqEntry } from "@/types/tool";
 
 const PRICING_FAQ: ToolFaqEntry[] = [
@@ -60,15 +61,25 @@ export function PricingContent({
   campay = false,
   stripe = false,
   signedIn = false,
-  plansAvailable = [],
+  prices,
 }: {
   notchpay?: boolean;
   campay?: boolean;
   stripe?: boolean;
   signedIn?: boolean;
-  plansAvailable?: Plan[];
-} = {}) {
-  const { t } = useLocale();
+  /** Every plan length for each paid tier, priced on the server. */
+  prices: Record<PaidTier, Plan[]>;
+}) {
+  const { t, locale } = useLocale();
+  const fr = locale === "fr";
+
+  // The cards show the monthly price of each tier, computed by the same
+  // function the checkout API charges with. Never a translated string: a
+  // price typed into a translation file is a price that stops being true the
+  // first time the admin changes it.
+  const monthly = (tier: PaidTier) => prices[tier].find((plan) => plan.id === "monthly") ?? prices[tier][0];
+  const proMonthly = monthly("pro");
+  const maxMonthly = monthly("max");
 
   const manualPayment = isManualPaymentAvailable();
   // "Payable" means there is a real way to hand over money today — through a
@@ -87,7 +98,7 @@ export function PricingContent({
           // being involved.
           <Card className="mx-auto mb-8 max-w-2xl p-5">
             <CheckoutButtons
-              plansAvailable={plansAvailable}
+              prices={prices}
               notchpay={notchpay}
               campay={campay}
               stripe={stripe}
@@ -98,7 +109,7 @@ export function PricingContent({
           // No provider, but Mobile Money is configured — so Pro can genuinely
           // be bought today, by hand. Slower than an API and entirely real.
           <div className="mx-auto mb-8 max-w-2xl">
-            <ManualPayment />
+            <ManualPayment prices={{ pro: proMonthly.amountXaf, max: maxMonthly.amountXaf }} />
           </div>
         ) : (
           <Notice tone="info" className="mx-auto mb-8 max-w-2xl text-center">
@@ -125,8 +136,8 @@ export function PricingContent({
           <PricingCard
             featured
             name={t("pricing.proName")}
-            price={t("pricing.proPrice")}
-            secondaryPrice={`${t("pricing.proPriceIntl")} / ${t("pricing.proPeriod")}`}
+            price={formatXaf(proMonthly.amountXaf, fr)}
+            secondaryPrice={`${formatUsd(proMonthly.amountUsdCents, fr)} / ${t("pricing.proPeriod")}`}
             period={t("pricing.proPeriod")}
             features={[
               t("pricing.proFeature1"),
@@ -146,15 +157,14 @@ export function PricingContent({
 
           <PricingCard
             name={t("pricing.maxName")}
-            price={t("pricing.maxPrice")}
-            secondaryPrice={`${t("pricing.maxPriceIntl")} / ${t("pricing.maxPeriod")}`}
+            price={formatXaf(maxMonthly.amountXaf, fr)}
+            secondaryPrice={`${formatUsd(maxMonthly.amountUsdCents, fr)} / ${t("pricing.maxPeriod")}`}
             period={t("pricing.maxPeriod")}
             features={[
               t("pricing.maxFeature1"),
               t("pricing.maxFeature2"),
               t("pricing.maxFeature3"),
               t("pricing.maxFeature4"),
-              t("pricing.maxFeature5"),
             ]}
             note={t("pricing.maxNote")}
             ctaLabel={payable ? t("pricing.maxCta") : t("pricing.comingSoonTitle")}

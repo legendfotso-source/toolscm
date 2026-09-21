@@ -13,6 +13,7 @@
  * rather than drifting out of proportion.
  */
 import { TERM_DAYS } from "./term";
+import { tierPriceUsdCents, tierPriceXaf, type TierId } from "./tiers";
 
 export type PlanId = "monthly" | "quarterly" | "yearly";
 
@@ -96,4 +97,43 @@ export function planName(id: PlanId, fr: boolean): string {
   if (id === "quarterly") return fr ? "3 mois" : "3 months";
   if (id === "yearly") return fr ? "12 mois" : "12 months";
   return fr ? "1 mois" : "1 month";
+}
+
+export type PaidTier = Exclude<TierId, "free">;
+
+/**
+ * Every plan length for one tier, priced from the admin settings.
+ *
+ * The ONE function that turns settings into a price. The pricing page, the
+ * checkout buttons, the Mobile Money instructions and the checkout API all
+ * call it, so the number a customer reads is the number they are charged —
+ * by construction, not by keeping several calculations in step. They were
+ * once computed separately, and choosing Max showed Pro prices while the
+ * server charged Max ones.
+ *
+ * The tier multiplier is applied to the monthly price first and the term
+ * discount second, so Max quarterly is discounted off the Max price.
+ */
+export function plansForTier(
+  settings: { price_xaf: number; price_usd: number },
+  tier: PaidTier,
+): Plan[] {
+  return plans(
+    tierPriceXaf(settings.price_xaf, tier),
+    tierPriceUsdCents(Math.round(settings.price_usd * 100), tier),
+  );
+}
+
+export function planForTier(
+  settings: { price_xaf: number; price_usd: number },
+  tier: PaidTier,
+  id: PlanId,
+): Plan {
+  const all = plansForTier(settings, tier);
+  return all.find((plan) => plan.id === id) ?? all[0];
+}
+
+/** Both paid tiers at once, for the pages that show them side by side. */
+export function pricesByTier(settings: { price_xaf: number; price_usd: number }): Record<PaidTier, Plan[]> {
+  return { pro: plansForTier(settings, "pro"), max: plansForTier(settings, "max") };
 }

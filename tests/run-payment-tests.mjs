@@ -73,7 +73,15 @@ function check(name, fn) {
   }
 }
 
-const out = compile("term.ts", "receipt.ts", "signatures.ts", "plans.ts", "reminders.ts");
+const out = compile(
+  "term.ts",
+  "receipt.ts",
+  "signatures.ts",
+  "tiers.ts",
+  "plans.ts",
+  "format.ts",
+  "reminders.ts",
+);
 const { nextEndDate, TERM_DAYS } = await import(join(out, "term.js"));
 const { receiptReference, receiptMessage, whatsappNumber } = await import(
   join(out, "receipt.js")
@@ -81,7 +89,8 @@ const { receiptReference, receiptMessage, whatsappNumber } = await import(
 const { verifyNotchpaySignature, verifyStripeSignature } = await import(
   join(out, "signatures.js")
 );
-const { plans, getPlan } = await import(join(out, "plans.js"));
+const { plans, getPlan, plansForTier, planForTier, pricesByTier } = await import(join(out, "plans.js"));
+const { formatXaf, formatUsd } = await import(join(out, "format.js"));
 const { daysUntil, reminderMessage, REMIND_WITHIN_DAYS } = await import(
   join(out, "reminders.js")
 );
@@ -479,6 +488,100 @@ check("the reminder reads naturally at one day and at zero", () => {
 check("the reminder window is short enough not to pester", () => {
   assert.ok(REMIND_WITHIN_DAYS >= 1 && REMIND_WITHIN_DAYS <= 7);
   return `${REMIND_WITHIN_DAYS} days`;
+});
+
+
+/* ---------------- one price, everywhere ---------------- */
+
+const SETTINGS = { price_xaf: 2000, price_usd: 5 };
+
+check("Max is priced off the admin setting, at every length", () => {
+  const byLength = Object.fromEntries(plansForTier(SETTINGS, "max").map((p) => [p.id, p]));
+  assert.equal(byLength.monthly.amountXaf, 5000);
+  assert.equal(byLength.monthly.amountUsdCents, 1250);
+  // The term discount applies to the MAX price: 2.5 months' worth for three.
+  assert.equal(byLength.quarterly.amountXaf, 12500);
+  assert.equal(byLength.yearly.amountXaf, 45000);
+  return "5,000 / 12,500 / 45,000 FCFA; $12.50 a month";
+});
+
+check("the price Pro shows is exactly the price the admin typed", () => {
+  // Rounding belongs to derived prices only. An admin who sets 2,250 FCFA
+  // must see 2,250 on the site, not a figure rounded to 2,500.
+  const odd = { price_xaf: 2250, price_usd: 5.5 };
+  const monthly = planForTier(odd, "pro", "monthly");
+  assert.equal(monthly.amountXaf, 2250);
+  assert.equal(monthly.amountUsdCents, 550);
+  return "2,250 stays 2,250";
+});
+
+check("what the page shows and what checkout charges come from one function", () => {
+  // The pricing page and the buttons read pricesByTier; the checkout API
+  // reads planForTier. If those two ever disagree, a customer is shown one
+  // number and charged another.
+  for (const settings of [SETTINGS, { price_xaf: 2500, price_usd: 6 }, { price_xaf: 3000, price_usd: 7 }]) {
+    const shown = pricesByTier(settings);
+    for (const tier of ["pro", "max"]) {
+      for (const length of ["monthly", "quarterly", "yearly"]) {
+        const onPage = shown[tier].find((p) => p.id === length);
+        const charged = planForTier(settings, tier, length);
+        assert.deepEqual(onPage, charged, `${tier} ${length} at ${settings.price_xaf}`);
+      }
+    }
+  }
+
+  // And the application code really does use those functions — a test of the
+  // helpers proves nothing if the route computes its own figure beside them.
+  const read = (path) => readFileSync(join(root, path), "utf8");
+  const route = read("src/app/api/checkout/route.ts");
+  assert.match(route, /planForTier\(settings, tier, planId\)/, "checkout no longer prices with planForTier");
+  assert.doesNotMatch(route, /priceMultiplier|getPlan\(/, "checkout computes a price of its own again");
+  assert.match(read("src/app/pricing/page.tsx"), /pricesByTier\(settings\)/);
+  assert.match(read("src/components/CheckoutButtons.tsx"), /prices\[tier\]/, "the buttons stopped following the chosen tier");
+  return "18 combinations agree, and both sides call them";
+});
+
+check("no price is typed into a translation file", () => {
+  // A price in a JSON string cannot follow the admin setting. Both did once:
+  // "5 000 FCFA" and "12 $" sat on the Max card while checkout charged $12.50.
+  for (const locale of ["fr", "en"]) {
+    const pricing = JSON.parse(readFileSync(join(root, "src", "locales", `${locale}.json`), "utf8")).pricing;
+    for (const [key, value] of Object.entries(pricing)) {
+      // Free is 0 whatever the admin sets, so that one number is a constant.
+      if (key === "freePrice") continue;
+      assert.doesNotMatch(String(value), /\d[\d\s.,]*\s*(FCFA|\$)|\$\s*\d/, `${locale}.pricing.${key} contains a price`);
+    }
+  }
+  return "prices come from settings, words from the translations";
+});
+
+check("prices are written the way each language writes them", () => {
+  assert.equal(formatXaf(5000, true), "5 000 FCFA");
+  assert.equal(formatXaf(5000, false), "5,000 FCFA");
+  assert.equal(formatUsd(500, false), "$5");
+  assert.equal(formatUsd(1250, false), "$12.50");
+  assert.equal(formatUsd(1250, true), "12,50 $");
+  return "5 000 FCFA · $12.50 · 12,50 $";
+});
+
+check("a Max receipt says Max, and an old receipt still says Pro", () => {
+  const base = {
+    reference: "TCM-AAAA-BBBB",
+    email: "client@example.com",
+    amount: 5000,
+    currency: "XAF",
+    paidAt: "2026-09-21T10:00:00Z",
+    proUntil: "2026-10-21T10:00:00Z",
+    days: 30,
+  };
+  const max = receiptMessage({ ...base, tier: "max" }, "fr");
+  assert.match(max, /Formule : Max/);
+  assert.match(max, /Votre accès Max est activé/);
+  assert.doesNotMatch(max, /\bPro\b/, "a Max customer was told they bought Pro");
+
+  const old = receiptMessage(base, "en");
+  assert.match(old, /Plan: Pro/);
+  return "the plan on the receipt is the plan that was paid for";
 });
 
 console.log("");

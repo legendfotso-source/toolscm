@@ -216,7 +216,11 @@ export function ToolWorkbench({
   const optionsToShow = useMemo(() => options, [options]);
 
   const paywall = (
-    <PaywallModal open={paywallOpen} onClose={() => setPaywallOpen(false)} />
+    <PaywallModal
+      open={paywallOpen}
+      onClose={() => setPaywallOpen(false)}
+      prices={usage.prices ?? undefined}
+    />
   );
 
   if (phase === "running") {

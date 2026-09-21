@@ -3,8 +3,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { currentUser } from "@/lib/supabase/server-client";
 import { getSettings } from "@/lib/settings";
-import { getPlan } from "@/lib/payments/plans";
-import { TIERS, tierName, type TierId } from "@/lib/payments/tiers";
+import { planForTier } from "@/lib/payments/plans";
+import { tierName, type TierId } from "@/lib/payments/tiers";
 import { attachProviderRef, createPendingPayment } from "@/lib/payments/core";
 import { initialisePayment, notchpayConfigured } from "@/lib/payments/providers/notchpay";
 import { campayConfigured, createPaymentLink } from "@/lib/payments/providers/campay";
@@ -17,7 +17,7 @@ const Body = z.object({
   provider: z.enum(["notchpay", "campay", "stripe"]),
   plan: z.enum(["monthly", "quarterly", "yearly"]).default("monthly"),
   // The browser may choose WHICH paid plan, but not what it costs — the
-  // multiplier below comes from the server's own table.
+  // price is computed below from the server's own settings.
   tier: z.enum(["pro", "max"]).default("pro"),
 });
 
@@ -58,16 +58,9 @@ export async function POST(request: Request) {
 
   const { provider, plan: planId, tier } = parsed.data;
 
-  // The tier's multiplier is applied to the admin's monthly price BEFORE the
-  // term discount, so Max quarterly is discounted off the Max price rather
-  // than off Pro's. Doing it the other way round silently sells Max at Pro
-  // rates on every plan except monthly.
-  const multiplier = TIERS[tier as TierId].priceMultiplier;
-  const plan = getPlan(
-    Math.round(settings.price_xaf * multiplier),
-    planId,
-    Math.round(settings.price_usd * 100 * multiplier),
-  );
+  // The same function the pricing page and the checkout buttons use, so the
+  // amount charged here is the amount the customer was shown.
+  const plan = planForTier(settings, tier, planId);
 
   if (provider === "notchpay" && !notchpayConfigured()) {
     return NextResponse.json({ error: "provider_unavailable" }, { status: 409 });

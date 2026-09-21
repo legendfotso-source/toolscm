@@ -1,13 +1,21 @@
 /**
  * What each plan actually gives you.
  *
- * Every number in this file is enforced somewhere real: the daily allowance in
- * `usage/server.ts`, the batch size in the upload zone AND on the server that
- * counts operations, the file size in the tool workbench. Nothing here is
+ * Every number in this file is read by real code: the daily allowance by
+ * `usage/server.ts`, on the server; the batch size and the file size by the
+ * tool workbench, in the browser. Nothing here is
  * decoration for the pricing page — if a limit appears in this table it is
  * because code reads it, and if code stops reading it the limit must come out
  * of the table too. A pricing page that promises a limit nobody enforces is a
  * lie that takes money.
+ *
+ * Where each limit is enforced matters, and is stated rather than blurred.
+ * The daily allowance is decided by the server, which the browser cannot
+ * argue with. The batch and file-size limits are applied in the browser,
+ * because the files never reach the server — that is the privacy promise —
+ * so there is nothing there to count. Someone who edits the page's JavaScript
+ * can get round them on their own device. They are product limits, not
+ * security boundaries, and nothing that costs us money depends on them.
  *
  * The tier is separate from the TERM (monthly / quarterly / yearly, in
  * plans.ts). A customer buys a tier for a length of time; those are two
@@ -83,9 +91,20 @@ export function tierOf(value: string | null | undefined): TierId {
 export function tierPriceXaf(monthlyXaf: number, tier: TierId): number {
   const multiplier = TIERS[tier].priceMultiplier;
   if (multiplier === 0) return 0;
+  // Pro IS the admin's price. Rounding it would quietly change a price
+  // somebody typed on purpose.
+  if (multiplier === 1) return monthlyXaf;
   // To the nearest 500 FCFA, because a price of 4,833 is a price nobody can
   // pay in cash and nobody trusts.
   return Math.round((monthlyXaf * multiplier) / 500) * 500;
+}
+
+/** The same, for the card price, in US cents — to the nearest 50 cents. */
+export function tierPriceUsdCents(monthlyUsdCents: number, tier: TierId): number {
+  const multiplier = TIERS[tier].priceMultiplier;
+  if (multiplier === 0) return 0;
+  if (multiplier === 1) return monthlyUsdCents;
+  return Math.round((monthlyUsdCents * multiplier) / 50) * 50;
 }
 
 export function tierName(tier: TierId, fr: boolean): string {

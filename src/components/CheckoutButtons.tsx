@@ -3,7 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
-import { type Plan, type PlanId, planName } from "@/lib/payments/plans";
+import { type PaidTier, type Plan, type PlanId, planName } from "@/lib/payments/plans";
+import { formatUsd, formatXaf } from "@/lib/payments/format";
 import { TIERS, tierName, type TierId } from "@/lib/payments/tiers";
 import { track } from "@/lib/analytics";
 import { Button, Notice, cx } from "./ui";
@@ -17,13 +18,14 @@ import { Button, Notice, cx } from "./ui";
  * or what gets granted.
  */
 export function CheckoutButtons({
-  plansAvailable,
+  prices,
   notchpay,
   campay,
   stripe,
   signedIn,
 }: {
-  plansAvailable: Plan[];
+  /** Every plan length for each paid tier, priced on the server. */
+  prices: Record<PaidTier, Plan[]>;
   notchpay: boolean;
   campay: boolean;
   stripe: boolean;
@@ -34,10 +36,13 @@ export function CheckoutButtons({
 
   const router = useRouter();
   const [planId, setPlanId] = useState<PlanId>("monthly");
-  const [tier, setTier] = useState<TierId>("pro");
+  const [tier, setTier] = useState<PaidTier>("pro");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // The lengths and prices shown are the chosen tier's. Showing Pro's while
+  // Max is selected would advertise one price and charge another.
+  const plansAvailable = prices[tier];
   const selected = plansAvailable.find((plan) => plan.id === planId) ?? plansAvailable[0];
 
   const start = async (provider: "notchpay" | "campay" | "stripe") => {
@@ -95,7 +100,7 @@ export function CheckoutButtons({
   return (
     <div>
       <p className="text-[14px] font-semibold text-ink">
-        {fr ? "Choisissez une durée" : "Choose a length"}
+        {fr ? "Choisissez une formule" : "Choose a plan"}
       </p>
 
       <div
@@ -103,7 +108,7 @@ export function CheckoutButtons({
         role="group"
         aria-label={fr ? "Formule" : "Plan"}
       >
-        {(["pro", "max"] as TierId[]).map((id) => {
+        {(["pro", "max"] as PaidTier[]).map((id) => {
           const active = id === tier;
           return (
             <button
@@ -129,6 +134,10 @@ export function CheckoutButtons({
         })}
       </div>
 
+      <p className="mt-4 text-[14px] font-semibold text-ink">
+        {fr ? "Choisissez une durée" : "Choose a length"}
+      </p>
+
       <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
         {plansAvailable.map((plan) => {
           const active = plan.id === planId;
@@ -149,7 +158,7 @@ export function CheckoutButtons({
                 {planName(plan.id, fr)}
               </span>
               <span className="block text-[13px] tabular-nums text-ink-soft">
-                {plan.amountXaf.toLocaleString(fr ? "fr-FR" : "en-GB")} FCFA
+                {formatXaf(plan.amountXaf, fr)}
               </span>
               {plan.savingPercent > 0 ? (
                 <span className="mt-0.5 inline-block rounded bg-violet-deep px-1.5 py-0.5 text-[11px] font-bold text-white">
@@ -223,9 +232,11 @@ export function CheckoutButtons({
               ? fr
                 ? "Ouverture..."
                 : "Opening..."
-              : fr
-                ? "Payer par carte bancaire"
-                : "Pay by card"}
+              : // Cards are charged in dollars, so the button says how many:
+                // the FCFA figures above are not what a card statement shows.
+                fr
+                ? `Payer par carte bancaire — ${formatUsd(Math.max(50, selected.amountUsdCents), fr)}`
+                : `Pay by card — ${formatUsd(Math.max(50, selected.amountUsdCents), fr)}`}
           </Button>
         ) : null}
       </div>

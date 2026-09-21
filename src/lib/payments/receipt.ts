@@ -21,6 +21,11 @@ export type Receipt = {
   paidAt: string;
   proUntil: string | null;
   days: number;
+  /**
+   * The plan this payment bought. Optional because receipts for payments made
+   * before Max existed have none — and every one of those was Pro.
+   */
+  tier?: "pro" | "max";
 };
 
 /**
@@ -89,6 +94,7 @@ function formatDateTime(iso: string, fr: boolean): string {
 export function receiptMessage(receipt: Receipt, locale: "fr" | "en" = "fr"): string {
   const fr = locale === "fr";
   const amount = `${receipt.amount.toLocaleString(fr ? "fr-FR" : "en-GB")} ${receipt.currency}`;
+  const plan = receipt.tier === "max" ? "Max" : "Pro";
 
   if (fr) {
     return [
@@ -98,10 +104,11 @@ export function receiptMessage(receipt: Receipt, locale: "fr" | "en" = "fr"): st
       `Compte : ${receipt.email}`,
       `Montant : ${amount}`,
       `Payé le : ${formatDateTime(receipt.paidAt, true)}`,
+      `Formule : ${plan}`,
       `Durée : ${receipt.days} jours`,
-      receipt.proUntil ? `Pro actif jusqu'au : ${formatDate(receipt.proUntil, true)}` : ``,
+      receipt.proUntil ? `Actif jusqu'au : ${formatDate(receipt.proUntil, true)}` : ``,
       ``,
-      `Votre accès Pro est activé. Merci d'utiliser Tools.cm 🙏`,
+      `Votre accès ${plan} est activé. Merci d'utiliser Tools.cm 🙏`,
       `Conservez cette référence : elle nous permet de retrouver votre paiement.`,
     ]
       .filter(Boolean)
@@ -115,10 +122,11 @@ export function receiptMessage(receipt: Receipt, locale: "fr" | "en" = "fr"): st
     `Account: ${receipt.email}`,
     `Amount: ${amount}`,
     `Paid on: ${formatDateTime(receipt.paidAt, false)}`,
+    `Plan: ${plan}`,
     `Length: ${receipt.days} days`,
-    receipt.proUntil ? `Pro active until: ${formatDate(receipt.proUntil, false)}` : ``,
+    receipt.proUntil ? `Active until: ${formatDate(receipt.proUntil, false)}` : ``,
     ``,
-    `Your Pro access is on. Thank you for using Tools.cm 🙏`,
+    `Your ${plan} access is on. Thank you for using Tools.cm 🙏`,
     `Keep this reference — it is how we find your payment again.`,
   ]
     .filter(Boolean)
