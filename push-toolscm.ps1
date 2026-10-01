@@ -5,13 +5,13 @@
 # checks below.
 #
 # It REFUSES rather than guesses. The copy of this repository on this PC is
-# expected to be at 6a6fbe9, the same commit GitHub has. If it is at anything
+# expected to be at 3a27ced, the same commit GitHub has. If it is at anything
 # else, somebody has worked in it since, and committing on top would quietly
 # bury that work. In that case the script stops and prints what it found.
 
 $root = 'C:\Users\ARTHUR\Downloads\toolscm_1\toolscm'
 $log = Join-Path $root 'push-log.txt'
-$expected = '6a6fbe9'
+$expected = '3a27ced'
 $remoteUrl = 'https://github.com/legendfotso-source/toolscm.git'
 
 Start-Transcript -Path $log -Force | Out-Null
@@ -58,6 +58,12 @@ try {
     git status --short
     Write-Output ""
 
+    # push-log.txt was committed by accident in 3a27ced — this script's own
+    # transcript, which no clone needs. .gitignore now lists it, but ignoring
+    # a file that is ALREADY tracked does nothing, so it has to be removed
+    # from the index by name. --cached keeps the file on disk.
+    git rm --cached --ignore-unmatch -q push-log.txt
+
     git add -A
 
     # Nothing to do is not a failure — it means this script already ran.
@@ -66,47 +72,37 @@ try {
         Write-Output "Nothing to commit: this update is already committed here."
     } else {
         $message = @"
-Unlimited owner accounts, and an approval queue for customers who have paid
+Make every migration stand on its own, and ship the file to paste
 
-Two things that were missing, and one property they share: neither may be
-settable from a browser.
+Pasting 0003 into the live Supabase SQL editor died on line 39 with
+ERROR: 42704: type "public.plan_tier" does not exist, in a database the
+statements above the failure had already half-changed. 0002 had been written,
+tested and committed in September - and never run against production. The
+test suite had never noticed, because it applied the migrations in order, the
+way nobody applies them by hand through a web page.
 
-An account with no limits. A fourth tier, 'owner': no daily cap, no batch
-cap, no file-size cap. It is not a plan - no price, absent from TIER_IDS so
-it can never reach the pricing page, and tierOf() refuses to return it, so a
-subscription row saying "owner" buys nothing however it got there. It is
-granted by profiles.is_unlimited, a column 'authenticated' has no UPDATE
-grant on, bootstrapped once from OWNER_EMAILS the way ADMIN_EMAIL makes the
-first admin, and toggled per account from /admin.
+Three changes, in the order that matters:
 
-NO_LIMIT is MAX_SAFE_INTEGER rather than Infinity: these limits cross into
-the browser as JSON, where Infinity becomes null and null > size is false -
-the unlimited account would have had the tightest limit of the four.
+0003 now creates plan_tier if it is absent, the same idempotent block 0002
+uses. It does NOT make 0002 unnecessary - 0002 also adds tier to
+subscriptions and payments, without which no customer can ever be on Max -
+and the comment says so.
 
-"I have paid". A customer who sent 2,000 FCFA by Mobile Money had no way to
-tell the site. payment_claims holds the declaration: it grants nothing, the
-server prices it with the same planForTier the pricing page uses so the
-amount can never come from the browser, and a unique index on
-lower(btrim(transaction_id)) means a reference can only be claimed once.
-Approving runs the existing idempotent grantPro under the customer's own
-reference, so two admins pressing the button grant one month between them.
-Refusing keeps a reason.
+test:db applies each migration ALONE, onto its own fresh database holding
+only 0001. A migration that works only when every earlier one was remembered
+is a migration that will one day be run without them. Breaking 0003's new
+prerequisite block makes exactly this check fail, and nothing else.
 
-/admin now lists every account with Pro, Max and Illimite on each row, and
-the payments waiting to be confirmed above it, oldest first.
+supabase/PASTE-INTO-SUPABASE.sql is the concatenation, in order, built by
+npm run paste-file. One paste, one Run, no order to remember. test:db checks
+both that it still matches the migrations it was built from - a stray hand
+edit fails the run and names the command to fix it - and that it really
+applies to a database holding only 0001, twice.
 
-Proven: 226 checks across seven suites, up from 196. 13 new ones, each
-mutation-tested - a flag defaulting to true, a browser-writable flag, a
-non-unique reference, a missing status constraint, an RLS policy reading
-'using (true)', an insertable status, the owner's caps put back, tierOf
-accepting "owner", owner on the pricing page, entitlement ignoring the flag,
-the price taken from the request, approve-twice, and the missing
-one-open-claim rule all fail the right check and nothing else.
+Also: push-log.txt was committed by accident in 3a27ced. Removed and
+gitignored.
 
-test:db now applies EVERY migration, in order, read off the directory rather
-than a hand-written list - and applies them twice, because each file claims
-to be safe to re-run and that claim is why it is safe to paste one into the
-Supabase SQL editor when you are not sure.
+53 database guarantees, up from 49. 230 checks in all.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01Ptx4ZF647YBxv6EfVtEvew

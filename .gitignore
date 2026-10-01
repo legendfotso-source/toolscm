@@ -52,3 +52,7 @@ next-env.d.ts
 /tests/.downloads
 /tests/last-run.json
 /tests/.screenshots
+
+# The transcript push-toolscm.ps1 writes. A log of one person's one push is
+# not something the next clone needs, and it was committed once by accident.
+push-log.txt

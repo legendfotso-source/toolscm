@@ -19,7 +19,8 @@
  * so it never blocks anyone who just wants to work on the tools.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { PASTE_FILE, buildPasteFile } from "../scripts/build-paste-file.mjs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -94,10 +95,23 @@ const BOOTSTRAP = `
 -- Stand-ins for the Supabase-specific pieces the migration depends on. These
 -- all exist in a real project; recreating them here is what lets the REAL
 -- migration run untouched against a plain PostgreSQL server.
-create role anon nologin;
-create role authenticated nologin;
-create role service_role nologin bypassrls;
-create role supabase_auth_admin nologin;
+-- Roles are cluster-wide, not per-database, so this file has to be safe to
+-- run a second time against a second database on the same server.
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'anon') then
+    create role anon nologin;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
+    create role authenticated nologin;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then
+    create role service_role nologin bypassrls;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'supabase_auth_admin') then
+    create role supabase_auth_admin nologin;
+  end if;
+end $$;
 
 create schema if not exists auth;
 create table if not exists auth.users (
@@ -113,6 +127,7 @@ $$;
 `;
 
 let failed = false;
+let standalone = 0;
 
 try {
   if (dropTo) {
@@ -162,6 +177,68 @@ try {
   }
   console.log(`Applied cleanly, twice — ${migrations.length} migrations.\n`);
 
+  // And each one applied ALONE, onto nothing but 0001.
+  //
+  // Because that is what actually happens. On 1 October 2026 the live project
+  // had 0001 and nothing else: 0002 was written, tested, committed — and never
+  // run. Pasting 0003 into the SQL editor died halfway through with
+  // `type "public.plan_tier" does not exist`, in a database that by then had
+  // already been half-changed by the statements above the failure.
+  //
+  // A migration that only works when every earlier one was remembered is a
+  // migration that will one day be run without them. So each is applied to its
+  // own fresh database holding only 0001, and has to succeed there.
+  console.log("Applying each migration alone, onto a database with only 0001...");
+  for (const name of migrations.filter((file) => !file.startsWith("0001"))) {
+    const alone = `alone_${name.replace(/[^a-z0-9]/gi, "_").toLowerCase()}`;
+    run(`${psql} -c "create database ${alone}"`, { quiet: true });
+    const into = `psql -h ${dir} -p ${PORT} -U postgres -v ON_ERROR_STOP=1 -q -d ${alone}`;
+    run(`${into} -f ${dir}/bootstrap.sql`, { quiet: true });
+    run(`${into} -f ${join(root, "supabase/migrations/0001_init.sql")}`, { quiet: true });
+    try {
+      run(`${into} -f ${join(root, "supabase/migrations", name)}`, { quiet: true });
+      console.log(`\u001b[32mPASS  ${name} applies on its own\u001b[0m`);
+      standalone += 1;
+    } catch (error) {
+      console.log(`\u001b[31mFAILED: ${name} needs an earlier migration that was not run\u001b[0m`);
+      console.log(String(error.stdout ?? error.message).split("\n").slice(-6).join("\n"));
+      failed = true;
+    }
+  }
+
+  // The single file handed to Fortune to paste into the Supabase SQL editor,
+  // run against a database in the exact state his live project is in: 0001
+  // and nothing else. Checking the pieces and not the thing he actually
+  // pastes is how the type error reached him in the first place.
+  const combined = PASTE_FILE;
+  if (readFileSync(combined, "utf8") !== buildPasteFile()) {
+    console.log(
+      "\u001b[31mFAILED: supabase/PASTE-INTO-SUPABASE.sql no longer matches the " +
+        "migrations it was built from. Run `npm run paste-file`.\u001b[0m",
+    );
+    failed = true;
+  } else {
+    console.log("\u001b[32mPASS  the pasted file is exactly the migrations, in order\u001b[0m");
+    standalone += 1;
+  }
+  {
+    run(`${psql} -c "create database combined_paste"`, { quiet: true });
+    const into = `psql -h ${dir} -p ${PORT} -U postgres -v ON_ERROR_STOP=1 -q -d combined_paste`;
+    run(`${into} -f ${dir}/bootstrap.sql`, { quiet: true });
+    run(`${into} -f ${join(root, "supabase/migrations/0001_init.sql")}`, { quiet: true });
+    try {
+      run(`${into} -f ${combined}`, { quiet: true });
+      run(`${into} -f ${combined}`, { quiet: true });   // and again, as promised
+      console.log("\u001b[32mPASS  the combined paste applies on a database with only 0001, twice\u001b[0m");
+      standalone += 1;
+    } catch (error) {
+      console.log("\u001b[31mFAILED: the file handed to Fortune does not apply\u001b[0m");
+      console.log(String(error.stdout ?? error.message).split("\n").slice(-6).join("\n"));
+      failed = true;
+    }
+  }
+  console.log("");
+
   // The checks print their own PASS lines; a failure raises and psql exits
   // non-zero, which throws here.
   const output = run(`${psql} -f ${join(here, "db-checks.sql")} 2>&1`, { quiet: true });
@@ -177,7 +254,7 @@ try {
   const passed = lines.filter((line) => line.startsWith("PASS")).length;
   failed = lines.some((line) => !line.startsWith("PASS"));
   console.log("");
-  console.log(`${passed} database guarantee${passed === 1 ? "" : "s"} verified`);
+  console.log(`${passed + standalone} database guarantee${passed + standalone === 1 ? "" : "s"} verified`);
 } catch (error) {
   failed = true;
   const detail = error.stdout || error.stderr || error.message;

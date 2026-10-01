@@ -20,6 +20,29 @@
 -- Safe to run more than once, and safe on a database with live rows in it.
 
 -- ---------------------------------------------------------------------------
+-- Prerequisite: the plan_tier type
+-- ---------------------------------------------------------------------------
+-- 0002 creates it. This file needs it, for payment_claims.tier.
+--
+-- Repeated here because on 1 October 2026 this file was pasted into the
+-- Supabase SQL editor of the live project and died on line 39 with
+-- `ERROR: 42704: type "public.plan_tier" does not exist` — 0002 had been
+-- written, tested and committed, and then never run against production. The
+-- file that depends on a step somebody has to remember will eventually be run
+-- without it, and "it failed with a type error halfway through" is the worst
+-- possible way to find that out.
+--
+-- So this file now stands on its own. It does NOT make 0002 unnecessary:
+-- 0002 also adds `tier` to subscriptions and payments, without which no
+-- customer can ever be on Max. Run both.
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'plan_tier') then
+    create type public.plan_tier as enum ('free', 'pro', 'max');
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
 -- The unlimited flag
 -- ---------------------------------------------------------------------------
 alter table public.profiles

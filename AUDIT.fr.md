@@ -504,14 +504,14 @@ Chaque suite de tests a été lancée sur cette version :
 | `npm run test:money` | 39 |
 | `npm run test:payments` | 45 |
 | `npm run test:tools` | 48, dans un vrai navigateur avec de vrais fichiers |
-| `npm run test:db` | 49 garanties sur un vrai PostgreSQL, chaque migration appliquée deux fois |
+| `npm run test:db` | 53 garanties sur un vrai PostgreSQL, chaque migration appliquée deux fois, puis seule, et le fichier à coller comparé aux migrations dont il est issu |
 | `npm run test:access` | 9, dans un vrai navigateur, en visiteur non connecté |
 
-Soit **226 vérifications, toutes réussies**, plus une vérification de types
+Soit **230 vérifications, toutes réussies**, plus une vérification de types
 propre, aucune erreur de lint, une compilation de production réussie, et des
 captures d'écran de la page Tarifs à 320 px et 1280 px.
 
-Les nouveaux tests ont été contrôlés en cassant le code exprès : **38 erreurs
+Les nouveaux tests ont été contrôlés en cassant le code exprès : **39 erreurs
 volontaires** (dans le calcul des formules, l'écriture du ZIP, le repli
 d'avant-migration, l'écart entre prix affiché et prix facturé, l'obligation
 de compte, les plafonds du compte illimité et chaque garantie SQL de la file

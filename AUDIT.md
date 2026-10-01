@@ -480,14 +480,14 @@ Every test suite was run against this version:
 | `npm run test:money` | 39 |
 | `npm run test:payments` | 45 |
 | `npm run test:tools` | 48, in a real browser with real files |
-| `npm run test:db` | 49 guarantees against real PostgreSQL, every migration applied twice |
+| `npm run test:db` | 53 guarantees against real PostgreSQL, every migration applied twice, each one alone, and the pasted file checked against the migrations it was built from |
 | `npm run test:access` | 9, in a real browser, as a signed-out visitor |
 
-That is **226 checks, all passing**, plus a clean type check, no lint errors,
+That is **230 checks, all passing**, plus a clean type check, no lint errors,
 a successful production build, and screenshots of the pricing page at 320 px
 and 1280 px.
 
-The new tests were checked by breaking the code on purpose: **38 deliberate
+The new tests were checked by breaking the code on purpose: **39 deliberate
 errors** (in plan pricing, the ZIP writer, the pre-migration fallback, the
 displayed-versus-charged price, the account requirement, the unlimited
 account's ceilings, and every SQL guarantee behind the approval queue). Two got through
