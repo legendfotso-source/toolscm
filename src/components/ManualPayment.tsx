@@ -12,6 +12,7 @@ import { useState } from "react";
 import { tierName, tierPriceXaf } from "@/lib/payments/tiers";
 import type { PaidTier } from "@/lib/payments/plans";
 import { formatXaf } from "@/lib/payments/format";
+import { PaymentClaim } from "./PaymentClaim";
 import { Notice, cx } from "./ui";
 
 /**
@@ -153,13 +154,24 @@ export function ManualPayment({
         </p>
       </div>
 
+      {/* Step 3 is now a form rather than an instruction. The reference goes
+          in here, the request lands in /admin, and the page afterwards says
+          where it stands — which is the part that was missing: somebody who
+          had paid and was waiting could not tell that from being ignored. */}
       <div className="mt-3 flex gap-2.5">
         <StepNumber n={3} />
-        <p className="flex-1 text-[14px] leading-6 text-ink">
-          {fr
-            ? `Votre accès ${plan} est activé et vous recevez un reçu sur WhatsApp, généralement en moins de 24 heures.`
-            : `Your ${plan} access is activated and you get a receipt on WhatsApp, usually within 24 hours.`}
-        </p>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] leading-6 text-ink">
+            {fr
+              ? "Déclarez le paiement ici. Dès qu'il est vérifié, votre accès "
+              : "Declare the payment here. As soon as it is checked, your "}
+            <strong>{plan}</strong>
+            {fr
+              ? " est activé — en général en moins de 24 heures."
+              : " access is activated — usually within 24 hours."}
+          </p>
+          <PaymentClaim tier={tier} />
+        </div>
       </div>
 
       {SUPPORT_WHATSAPP ? (

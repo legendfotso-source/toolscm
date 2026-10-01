@@ -19,7 +19,7 @@
  * so it never blocks anyone who just wants to work on the tools.
  */
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -140,9 +140,27 @@ try {
   const psql = `psql -h ${dir} -p ${PORT} -U postgres -v ON_ERROR_STOP=1 -q`;
   run(`${psql} -f ${dir}/bootstrap.sql`, { quiet: true });
 
-  console.log("Applying supabase/migrations/0001_init.sql to a fresh database...");
-  run(`${psql} -f ${join(root, "supabase/migrations/0001_init.sql")}`, { quiet: true });
-  console.log("Applied cleanly.\n");
+  // EVERY migration, in order, read off the directory rather than listed here
+  // — a list written by hand is correct until somebody adds a migration and
+  // forgets to add it, which is how 0002 and 0003 went untested for a while
+  // and how `plan_tier` ended up being a type this suite had never seen.
+  const migrations = readdirSync(join(root, "supabase/migrations"))
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+
+  for (const name of migrations) {
+    console.log(`Applying supabase/migrations/${name} to a fresh database...`);
+    run(`${psql} -f ${join(root, "supabase/migrations", name)}`, { quiet: true });
+  }
+
+  // Applied twice, start to finish. Every one of these files claims to be
+  // safe to re-run, and that claim is the whole reason it is safe to paste one
+  // into the Supabase SQL editor when you are not sure whether you already
+  // did. Asserting it costs one more pass.
+  for (const name of migrations) {
+    run(`${psql} -f ${join(root, "supabase/migrations", name)}`, { quiet: true });
+  }
+  console.log(`Applied cleanly, twice — ${migrations.length} migrations.\n`);
 
   // The checks print their own PASS lines; a failure raises and psql exits
   // non-zero, which throws here.

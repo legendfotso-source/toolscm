@@ -1,6 +1,7 @@
 import "server-only";
 
 import { adminClient } from "./supabase/admin";
+import { tierOf, type TierId } from "./payments/tiers";
 import { currentUser } from "./supabase/server-client";
 
 /**
@@ -69,6 +70,9 @@ async function promoteFirstAdmin(userId: string, email: string): Promise<boolean
   return true;
 }
 
+/** PostgreSQL's code for "that column does not exist". */
+const UNDEFINED_COLUMN = "42703";
+
 export type DayCount = { day: string; views: number; visitors: number };
 
 export type Audience = {
@@ -98,6 +102,10 @@ export type Member = {
   /** 'active' while Pro is paid up, otherwise the last status, or null. */
   proStatus: string | null;
   proUntil: string | null;
+  /** Which plan the live subscription is for. 'free' when there is none. */
+  tier: TierId;
+  /** The no-limits flag on the profile. Not a plan and not for sale. */
+  isUnlimited: boolean;
 };
 
 export type ExpiringRow = {
@@ -290,43 +298,66 @@ export async function getMembers(limit = 200): Promise<Member[]> {
   const client = adminClient();
   if (!client) return [];
 
-  const { data, error } = await client
-    .from("profiles")
-    .select("id, email, is_admin, created_at")
-    .order("created_at", { ascending: false })
-    .limit(limit);
+  // Asked for twice when necessary, for the same reason getEntitlement() does
+  // it: Vercel redeploys the moment the code is pushed, while 0003 is run by
+  // hand in the Supabase SQL editor. In the window between the two, selecting
+  // `is_unlimited` fails — and the failure path here returns an EMPTY list, so
+  // /admin would show "nobody has created an account yet" to somebody who has
+  // customers. One extra round trip makes the order of the two deploys stop
+  // mattering.
+  const ask = (columns: string) =>
+    client
+      .from("profiles")
+      .select(columns)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+  let result = await ask("id, email, is_admin, created_at, is_unlimited");
+  if (result.error?.code === UNDEFINED_COLUMN) {
+    result = await ask("id, email, is_admin, created_at");
+  }
+  const { data, error } = result;
 
   if (error) {
     console.error("[Tools.cm] could not list members:", error.message);
     return [];
   }
 
-  const profiles = (data ?? []) as {
+  const profiles = (data ?? []) as unknown as {
     id: string;
     email: string | null;
     is_admin: boolean;
     created_at: string;
+    is_unlimited?: boolean;
   }[];
   if (profiles.length === 0) return [];
 
   // One query for the subscriptions rather than one per member.
-  const { data: subsData } = await client
-    .from("subscriptions")
-    .select("user_id, status, end_date")
-    .in("user_id", profiles.map((row) => row.id))
-    .order("end_date", { ascending: false, nullsFirst: false });
+  const askSubs = (columns: string) =>
+    client
+      .from("subscriptions")
+      .select(columns)
+      .in("user_id", profiles.map((row) => row.id))
+      .order("end_date", { ascending: false, nullsFirst: false });
 
-  const subs = new Map<string, { status: string; end_date: string | null }>();
-  for (const row of (subsData ?? []) as {
+  let subsResult = await askSubs("user_id, status, end_date, tier");
+  if (subsResult.error?.code === UNDEFINED_COLUMN) {
+    subsResult = await askSubs("user_id, status, end_date");
+  }
+  const subsData = subsResult.data;
+
+  const subs = new Map<string, { status: string; end_date: string | null; tier?: string | null }>();
+  for (const row of (subsData ?? []) as unknown as {
     user_id: string;
     status: string;
     end_date: string | null;
+    tier?: string | null;
   }[]) {
     const existing = subs.get(row.user_id);
     // An active subscription always wins over an expired one, whatever the
     // dates say; otherwise the newest end date is the interesting one.
     if (!existing || (row.status === "active" && existing.status !== "active")) {
-      subs.set(row.user_id, { status: row.status, end_date: row.end_date });
+      subs.set(row.user_id, { status: row.status, end_date: row.end_date, tier: row.tier });
     }
   }
 
@@ -338,6 +369,10 @@ export async function getMembers(limit = 200): Promise<Member[]> {
       isAdmin: row.is_admin,
       proStatus: sub?.status ?? null,
       proUntil: sub?.end_date ?? null,
+      // A paid row with no tier recorded is Pro: every subscription sold
+      // before Max existed was a Pro subscription.
+      tier: sub?.status === "active" ? tierOf(sub.tier ?? "pro") : "free",
+      isUnlimited: row.is_unlimited === true,
     };
   });
 }

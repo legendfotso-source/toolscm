@@ -99,7 +99,15 @@ export function planName(id: PlanId, fr: boolean): string {
   return fr ? "1 mois" : "1 month";
 }
 
-export type PaidTier = Exclude<TierId, "free">;
+/**
+ * A tier somebody can actually buy.
+ *
+ * `owner` is excluded as well as `free`: it is granted, not sold, so it has
+ * no price, no plan length and no checkout. Written as an exclusion rather
+ * than a fresh union so that a fifth tier added to `TierId` has to be
+ * classified here before anything compiles.
+ */
+export type PaidTier = Exclude<TierId, "free" | "owner">;
 
 /**
  * Every plan length for one tier, priced from the admin settings.

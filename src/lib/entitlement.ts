@@ -77,6 +77,14 @@ export async function getEntitlement(): Promise<Entitlement> {
   const client = adminClient();
   if (!client) return { ...FREE, userId: user.id };
 
+  // The owner's own account comes first, and short-circuits everything below.
+  // It is not a subscription — there is no end date to check and no payment
+  // to have expired — so asking about subscriptions at all would only be a
+  // way to get the answer wrong.
+  if (await hasUnlimited(client, user.id, user.email ?? "")) {
+    return { tier: "owner", isPro: true, userId: user.id, proUntil: null };
+  }
+
   // Evaluate expiry at read time rather than trusting a status column that a
   // cron job may not have updated yet.
   const row = await activeSubscription(client, user.id);
@@ -100,4 +108,54 @@ export async function getEntitlement(): Promise<Entitlement> {
   // away something people paid for.
   const tier = tierOf(row.tier ?? "pro");
   return { tier, isPro: true, userId: user.id, proUntil: row.end_date };
+}
+
+
+/**
+ * Does this account have the no-limits flag?
+ *
+ * Read from `profiles.is_unlimited`, which `authenticated` has no UPDATE
+ * grant on at all — so there is nothing here a user can set from the browser,
+ * in dev tools, or by signing up with a particular address.
+ *
+ * `OWNER_EMAILS` exists for the same reason `ADMIN_EMAIL` does: on a fresh
+ * deployment the only other way to set the flag is a hand-written UPDATE
+ * against production, which is a step people get wrong or skip while leaving
+ * the service-role key somewhere convenient. It is a server-side variable,
+ * never sent to the browser, and it writes the flag ONCE — after that the
+ * column is the authority and the variable can be cleared.
+ */
+async function hasUnlimited(
+  client: NonNullable<ReturnType<typeof adminClient>>,
+  userId: string,
+  email: string,
+): Promise<boolean> {
+  const { data, error } = await client
+    .from("profiles")
+    .select("is_unlimited")
+    .eq("id", userId)
+    .maybeSingle();
+
+  // Pre-migration database: the column does not exist yet. Not an error worth
+  // failing over — the answer is simply "no" until 0003 has been run.
+  if (error?.code === UNDEFINED_COLUMN) return false;
+  if (!error && (data as { is_unlimited?: boolean } | null)?.is_unlimited === true) return true;
+
+  const configured = (process.env.OWNER_EMAILS ?? "")
+    .split(/[,;\s]+/)
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  const mine = email.trim().toLowerCase();
+  if (!mine || !configured.includes(mine)) return false;
+
+  const write = await client.from("profiles").update({ is_unlimited: true }).eq("id", userId);
+  if (write.error) {
+    console.error("[Tools.cm] could not set is_unlimited:", write.error.message);
+    // Say yes anyway. The variable named this address as the owner; failing to
+    // persist that is a database problem, not a reason to cap the owner.
+    return write.error.code !== UNDEFINED_COLUMN;
+  }
+
+  console.warn(`[Tools.cm] ${email} was given unlimited access from OWNER_EMAILS.`);
+  return true;
 }

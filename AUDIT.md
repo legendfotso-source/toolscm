@@ -407,6 +407,68 @@ has an account.
 
 ---
 
+## 10 — The owner's account, and approving a customer who has paid
+
+Two things that were missing, and one property they share: neither may be
+settable from a browser.
+
+### An account with no limits
+
+There is now a fourth tier, `owner`. It has no daily cap, no batch cap and no
+file-size cap, and it is **not a plan**: it has no price, it is absent from
+`TIER_IDS` so it can never appear on the pricing page, and `tierOf()` refuses
+to return it — so a subscription row saying `owner`, however it got there,
+buys nothing. A payment that names it is tested for and does not produce it.
+
+It is granted by `profiles.is_unlimited`, a column `authenticated` has no
+UPDATE grant on at all; the only ways to set it are the service role and the
+"Illimité" button in /admin. On a fresh deployment `OWNER_EMAILS` sets it once
+for the addresses named, exactly the way `ADMIN_EMAIL` makes the first
+administrator — and the column outlives the variable, so it can be cleared
+afterwards.
+
+`NO_LIMIT` is `Number.MAX_SAFE_INTEGER` rather than `Infinity`. These limits
+cross into the browser as JSON, where `Infinity` becomes `null` and
+`null > size` is false — the unlimited account would have ended up with the
+tightest limit of the four.
+
+### "I have paid" — the approval queue
+
+A customer who sent 2,000 FCFA by Mobile Money had no way to tell the site
+about it. They had to find Fortune on WhatsApp, he had to read a reference off
+a phone screen and type it into /admin himself, and the ones who gave up
+waiting looked exactly like the ones who never paid.
+
+The new `payment_claims` table holds a declared payment. Three properties:
+
+* **A claim grants nothing.** The row carries no access; only an admin
+  pressing Approuver calls `grantPro`.
+* **The amount is never taken from the browser.** The server prices the plan
+  with `planForTier`, the same function the pricing page uses, so a claim
+  saying "I sent 100 FCFA for Max" cannot exist.
+* **A reference can only be claimed once**, case- and space-insensitively,
+  enforced by a unique index on `lower(btrim(transaction_id))`.
+
+Approving goes through the existing idempotent grant, so two admins pressing
+the button at the same moment grant one month between them, not two. Refusing
+keeps a reason, which is what lets somebody who mistyped a reference fix it
+instead of giving up.
+
+### What /admin can now do
+
+Every account that has signed up is listed, with Pro, Max and Illimité on each
+row. Pro and Max record a manual payment at the real price of that tier and
+grant a month; Illimité is the flag, with no payment and no end date.
+Payments waiting to be confirmed sit above the list, oldest first.
+
+### What has to be done outside the code
+
+1. Run `supabase/migrations/0003_claims_and_unlimited.sql` in the Supabase SQL
+   editor. Until it is run, /admin says so in as many words rather than
+   failing with "the operation failed".
+2. Set `OWNER_EMAILS=legendfotso@gmail.com` in Vercel (Config, not Secret),
+   and redeploy.
+
 ## How this was checked
 
 Every test suite was run against this version:
@@ -415,19 +477,20 @@ Every test suite was run against this version:
 | --- | --- |
 | `npm run test:config` | 21 |
 | `npm run test:layout` | 18, including a real `unzip -t` on an archive the code wrote |
-| `npm run test:money` | 27 |
+| `npm run test:money` | 39 |
 | `npm run test:payments` | 45 |
 | `npm run test:tools` | 48, in a real browser with real files |
-| `npm run test:db` | 31 guarantees against real PostgreSQL |
-| `npm run test:access` | 6, in a real browser, as a signed-out visitor |
+| `npm run test:db` | 49 guarantees against real PostgreSQL, every migration applied twice |
+| `npm run test:access` | 9, in a real browser, as a signed-out visitor |
 
-That is **196 checks, all passing**, plus a clean type check, no lint errors,
+That is **226 checks, all passing**, plus a clean type check, no lint errors,
 a successful production build, and screenshots of the pricing page at 320 px
 and 1280 px.
 
-The new tests were checked by breaking the code on purpose: **25 deliberate
+The new tests were checked by breaking the code on purpose: **38 deliberate
 errors** (in plan pricing, the ZIP writer, the pre-migration fallback, the
-displayed-versus-charged price, and the account requirement). Two got through
+displayed-versus-charged price, the account requirement, the unlimited
+account's ceilings, and every SQL guarantee behind the approval queue). Two got through
 at first, each because of a flaw in the test rather than the code: the test
 stand-in in section 3, item 9, and a browser test that was talking to a
 server left over from its previous run. Both flaws are fixed, and both errors

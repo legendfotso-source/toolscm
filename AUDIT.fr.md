@@ -430,6 +430,69 @@ demandée, mais c'est l'étape logique maintenant que tout le monde a un compte.
 
 ---
 
+## 10 — Le compte du propriétaire, et l'approbation d'un client qui a payé
+
+Deux choses qui manquaient, et une propriété commune : ni l'une ni l'autre ne
+peut être définie depuis un navigateur.
+
+### Un compte sans aucune limite
+
+Il existe désormais une quatrième formule, `owner` : aucun quota quotidien,
+aucune limite de lot, aucune limite de taille. Ce **n'est pas une formule
+vendue** : elle n'a pas de prix, elle est absente de `TIER_IDS` donc elle ne
+peut jamais apparaître sur la page Tarifs, et `tierOf()` refuse de la
+renvoyer — une ligne d'abonnement disant `owner`, quelle qu'en soit l'origine,
+n'achète rien. Un paiement qui la nomme est testé et ne la produit pas.
+
+Elle est accordée par `profiles.is_unlimited`, une colonne sur laquelle
+`authenticated` n'a aucun droit d'UPDATE ; seuls le rôle serveur et le bouton
+« Illimité » de /admin peuvent l'écrire. Sur un déploiement neuf,
+`OWNER_EMAILS` la met une fois pour les adresses nommées, exactement comme
+`ADMIN_EMAIL` crée le premier administrateur — et la colonne survit à la
+variable, qui peut donc être effacée ensuite.
+
+`NO_LIMIT` vaut `Number.MAX_SAFE_INTEGER` et non `Infinity` : ces limites
+traversent vers le navigateur en JSON, où `Infinity` devient `null` et
+`null > taille` est faux — le compte illimité aurait fini avec la limite la
+plus stricte des quatre.
+
+### « J'ai payé » — la file d'approbation
+
+Un client qui envoyait 2 000 FCFA par Mobile Money n'avait aucun moyen de le
+dire au site. Il fallait trouver Fortune sur WhatsApp, lui lire une référence
+au téléphone, et qu'il la saisisse lui-même dans /admin. Ceux qui
+abandonnaient ressemblaient exactement à ceux qui n'avaient jamais payé.
+
+La table `payment_claims` enregistre un paiement déclaré. Trois propriétés :
+
+* **Une déclaration ne donne aucun accès.** Seul un administrateur qui appuie
+  sur Approuver déclenche `grantPro`.
+* **Le montant ne vient jamais du navigateur.** Le serveur calcule le prix
+  avec `planForTier`, la fonction qu'utilise la page Tarifs — « j'ai envoyé
+  100 FCFA pour Max » ne peut pas exister.
+* **Une référence ne peut être déclarée qu'une fois**, casse et espaces
+  compris, via un index unique sur `lower(btrim(transaction_id))`.
+
+L'approbation passe par le même code idempotent que les webhooks : deux
+administrateurs qui appuient en même temps donnent un mois à eux deux, pas
+deux. Un refus conserve sa raison — c'est ce qui permet à quelqu'un qui a mal
+recopié une référence de corriger au lieu d'abandonner.
+
+### Ce que /admin peut faire maintenant
+
+Tous les comptes créés sont listés, avec Pro, Max et Illimité sur chaque
+ligne. Pro et Max enregistrent un paiement manuel au vrai prix de la formule
+et donnent un mois ; Illimité est le drapeau, sans paiement ni date de fin.
+Les paiements à confirmer sont au-dessus de la liste, le plus ancien en tête.
+
+### Ce qui doit être fait en dehors du code
+
+1. Exécuter `supabase/migrations/0003_claims_and_unlimited.sql` dans l'éditeur
+   SQL Supabase. Tant que ce n'est pas fait, /admin le dit explicitement au
+   lieu d'échouer sur « l'opération a échoué ».
+2. Mettre `OWNER_EMAILS=legendfotso@gmail.com` dans Vercel (Config, pas
+   Secret), puis redéployer.
+
 ## Comment cela a été vérifié
 
 Chaque suite de tests a été lancée sur cette version :
@@ -438,20 +501,21 @@ Chaque suite de tests a été lancée sur cette version :
 | --- | --- |
 | `npm run test:config` | 21 |
 | `npm run test:layout` | 18, dont un vrai `unzip -t` sur une archive écrite par le code |
-| `npm run test:money` | 27 |
+| `npm run test:money` | 39 |
 | `npm run test:payments` | 45 |
 | `npm run test:tools` | 48, dans un vrai navigateur avec de vrais fichiers |
-| `npm run test:db` | 31 garanties sur un vrai PostgreSQL |
-| `npm run test:access` | 6, dans un vrai navigateur, en visiteur non connecté |
+| `npm run test:db` | 49 garanties sur un vrai PostgreSQL, chaque migration appliquée deux fois |
+| `npm run test:access` | 9, dans un vrai navigateur, en visiteur non connecté |
 
-Soit **196 vérifications, toutes réussies**, plus une vérification de types
+Soit **226 vérifications, toutes réussies**, plus une vérification de types
 propre, aucune erreur de lint, une compilation de production réussie, et des
 captures d'écran de la page Tarifs à 320 px et 1280 px.
 
-Les nouveaux tests ont été contrôlés en cassant le code exprès : **25 erreurs
+Les nouveaux tests ont été contrôlés en cassant le code exprès : **38 erreurs
 volontaires** (dans le calcul des formules, l'écriture du ZIP, le repli
-d'avant-migration, l'écart entre prix affiché et prix facturé, et l'obligation
-de compte). Deux sont passées au début, chaque fois à cause d'un défaut du test
+d'avant-migration, l'écart entre prix affiché et prix facturé, l'obligation
+de compte, les plafonds du compte illimité et chaque garantie SQL de la file
+d'approbation). Deux sont passées au début, chaque fois à cause d'un défaut du test
 et non du code : la fausse base de données de la section 3, point 9, et un
 test navigateur qui parlait à un serveur resté de l'exécution précédente. Les
 deux défauts sont corrigés, et les deux erreurs sont attrapées maintenant.

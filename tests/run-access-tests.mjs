@@ -164,6 +164,70 @@ try {
     await page.close();
     return "//evil.example replaced with /account";
   });
+
+  await check("/admin does not exist for anybody who is not an administrator", async () => {
+    // notFound(), not a 403. A stranger must not even learn that the page is
+    // there — and it is the one screen that lists real email addresses.
+    const response = await fetch(`${BASE}/admin`);
+    assert.equal(response.status, 404, `/admin answered ${response.status}`);
+
+    // The two endpoints behind it answer the same way, for someone who skips
+    // the page and calls them directly. 404 and not 401, deliberately: the
+    // reply gives away nothing about what exists.
+    for (const [path, init] of [
+      ["/api/admin/claims", {}],
+      [
+        "/api/admin/claims",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "approve", claimId: "00000000-0000-0000-0000-000000000000" }),
+        },
+      ],
+      [
+        "/api/admin/subscriptions",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "unlimited", email: "someone@example.com", enabled: true }),
+        },
+      ],
+    ]) {
+      const answer = await fetch(`${BASE}${path}`, init);
+      assert.equal(answer.status, 404, `${path} answered ${answer.status}`);
+    }
+    return "the page and both endpoints: 404, with nothing given away";
+  });
+
+  await check("nobody can declare a payment without an account", async () => {
+    const response = await fetch(`${BASE}/api/payments/claim`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ tier: "max", plan: "yearly", transactionId: "MP-FORGED-001" }),
+    });
+    assert.equal(response.status, 401, `the claim endpoint answered ${response.status}`);
+    assert.deepEqual(await response.json(), { error: "sign_in_required" });
+    return "401 sign_in_required — a claim is always attached to an account";
+  });
+
+  await check("the payment page asks a signed-out visitor to sign in, and shows no form", async () => {
+    const page = await browser.newPage({ locale: "fr-FR" });
+    await page.goto(`${BASE}/pricing`, { waitUntil: "networkidle" });
+
+    // The claim block renders its sign-in prompt rather than the form. A form
+    // shown to somebody with no session would collect a Mobile Money
+    // reference and then have nowhere to attach it.
+    await page.getByText("Connectez-vous pour déclarer un paiement").waitFor({ timeout: 10_000 });
+    assert.equal(
+      await page.getByTestId("claim-reference").count(),
+      0,
+      "the reference field is on the page for a visitor with no account",
+    );
+    assert.equal(await page.getByTestId("claim-submit").count(), 0);
+    await page.close();
+    return "the prompt is there, the reference field is not";
+  });
+
 } finally {
   await browser.close();
   stopServer();

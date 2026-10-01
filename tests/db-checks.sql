@@ -402,3 +402,176 @@ begin
     'and nobody in a browser can write to them either'
   );
 end $$;
+
+-- ===========================================================================
+-- 0003 — the unlimited flag, and the approval queue
+-- ===========================================================================
+
+-- The flag exists, and it is OFF by default. A column that defaulted to true
+-- would hand the whole site to everybody who signs up.
+do $$
+declare
+  default_expression text;
+begin
+  select column_default into default_expression
+    from information_schema.columns
+   where table_schema = 'public' and table_name = 'profiles' and column_name = 'is_unlimited';
+
+  perform test_assert(default_expression is not null, 'profiles.is_unlimited exists');
+  perform test_assert(default_expression like 'false%', 'a new account is not unlimited by default');
+end $$;
+
+-- The one guarantee the whole feature rests on: a signed-in user can READ the
+-- flag (so /account can say what the account is) and cannot WRITE it. The
+-- grant on profiles is `update (email)` and nothing else, so this must hold
+-- for every column except email.
+do $$
+begin
+  perform test_assert(
+    has_column_privilege('authenticated', 'public.profiles', 'is_unlimited', 'SELECT'),
+    'a signed-in user can read their own unlimited flag'
+  );
+  perform test_assert(
+    not has_column_privilege('authenticated', 'public.profiles', 'is_unlimited', 'UPDATE'),
+    'nobody can give themselves unlimited access from a browser'
+  );
+  perform test_assert(
+    not has_column_privilege('anon', 'public.profiles', 'is_unlimited', 'SELECT'),
+    'and an anonymous visitor cannot read it at all'
+  );
+  -- The same hole, one column over. is_admin was already protected; a new
+  -- column being protected only by accident is not protection.
+  perform test_assert(
+    not has_column_privilege('authenticated', 'public.profiles', 'is_admin', 'UPDATE'),
+    'nor make themselves an administrator'
+  );
+end $$;
+
+-- A claim grants nothing, so the browser may create one. It may not decide
+-- one: `status` has no UPDATE grant, and neither has anything else on the row.
+do $$
+begin
+  -- Column-level, deliberately: the grant names the columns a customer may
+  -- write and no others, so table-level INSERT is false here and SHOULD be.
+  perform test_assert(
+    has_column_privilege('authenticated', 'public.payment_claims', 'transaction_id', 'INSERT')
+      and has_column_privilege('authenticated', 'public.payment_claims', 'tier', 'INSERT'),
+    'a signed-in customer can declare a payment'
+  );
+  perform test_assert(
+    has_table_privilege('authenticated', 'public.payment_claims', 'SELECT'),
+    'and can read back what they declared'
+  );
+  perform test_assert(
+    not has_table_privilege('authenticated', 'public.payment_claims', 'UPDATE'),
+    'and cannot approve it themselves'
+  );
+  perform test_assert(
+    not has_column_privilege('authenticated', 'public.payment_claims', 'status', 'INSERT'),
+    'nor insert one that is already approved'
+  );
+  perform test_assert(
+    not has_table_privilege('authenticated', 'public.payment_claims', 'DELETE'),
+    'nor delete a refused one and try again'
+  );
+  perform test_assert(
+    not has_table_privilege('anon', 'public.payment_claims', 'SELECT')
+      and not has_table_privilege('anon', 'public.payment_claims', 'INSERT'),
+    'an anonymous visitor cannot touch the queue'
+  );
+  perform test_assert(
+    (select relrowsecurity from pg_class where oid = 'public.payment_claims'::regclass),
+    'row level security is on for the queue'
+  );
+end $$;
+
+-- One claim per Mobile Money reference, case- and space-insensitively. Without
+-- this, a customer tapping the button four times leaves four claims and an
+-- admin working through the queue approves the same transfer four times.
+do $$
+declare
+  user_a uuid;
+  clashed boolean := false;
+begin
+  insert into auth.users (email) values ('claimer@example.com') returning id into user_a;
+
+  insert into public.payment_claims (user_id, tier, days, amount, transaction_id)
+  values (user_a, 'pro', 30, 2000, 'MP260930.1432.A1');
+
+  begin
+    insert into public.payment_claims (user_id, tier, days, amount, transaction_id)
+    values (user_a, 'max', 90, 5000, '  mp260930.1432.a1  ');
+  exception when unique_violation then
+    clashed := true;
+  end;
+
+  perform test_assert(clashed, 'the same reference cannot be claimed twice, whatever the case');
+  perform test_assert(
+    (select count(*) from public.payment_claims where user_id = user_a) = 1,
+    'and only one row survives'
+  );
+end $$;
+
+-- The row refuses nonsense on its own, without any application code.
+do $$
+declare
+  user_b uuid;
+  rejected integer := 0;
+begin
+  insert into auth.users (email) values ('badclaims@example.com') returning id into user_b;
+
+  begin
+    insert into public.payment_claims (user_id, tier, days, amount, transaction_id)
+    values (user_b, 'pro', 30, 2000, ' x ');
+  exception when check_violation then rejected := rejected + 1;
+  end;
+
+  begin
+    insert into public.payment_claims (user_id, tier, days, amount, transaction_id, status)
+    values (user_b, 'pro', 30, 2000, 'ref-weird-status', 'granted');
+  exception when check_violation then rejected := rejected + 1;
+  end;
+
+  begin
+    insert into public.payment_claims (user_id, tier, days, amount, transaction_id)
+    values (user_b, 'pro', 30, -5, 'ref-negative');
+  exception when check_violation then rejected := rejected + 1;
+  end;
+
+  begin
+    insert into public.payment_claims (user_id, tier, days, amount, transaction_id)
+    values (user_b, 'pro', 99999, 2000, 'ref-forever');
+  exception when check_violation then rejected := rejected + 1;
+  end;
+
+  perform test_assert(
+    rejected = 4,
+    'a two-character reference, an invented status, a negative amount and a 273-year term are all refused'
+  );
+end $$;
+
+-- A signed-in customer sees their own claims and nobody else's. This is the
+-- policy, exercised as two different users rather than read off the catalogue.
+do $$
+declare
+  user_c uuid;
+  user_d uuid;
+  seen integer;
+begin
+  insert into auth.users (email) values ('mine@example.com') returning id into user_c;
+  insert into auth.users (email) values ('theirs@example.com') returning id into user_d;
+
+  insert into public.payment_claims (user_id, tier, days, amount, transaction_id)
+  values (user_c, 'pro', 30, 2000, 'ref-mine'), (user_d, 'pro', 30, 2000, 'ref-theirs');
+
+  set local role authenticated;
+  perform set_config('test.user_id', user_c::text, true);
+
+  select count(*) into seen from public.payment_claims;
+  perform test_assert(seen = 1, 'a customer sees only their own payment requests');
+
+  select count(*) into seen from public.payment_claims where transaction_id = 'ref-theirs';
+  perform test_assert(seen = 0, 'and not somebody else''s reference');
+
+  reset role;
+end $$;

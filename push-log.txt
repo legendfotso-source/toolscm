@@ -1,0 +1,31 @@
+﻿**********************
+Début de la transcription Windows PowerShell
+Heure de début : 20261001143054
+Nom d'utilisateur : DESKTOP-DS1ESG6\ARTHUR
+Utilisateur runAs :  DESKTOP-DS1ESG6\ARTHUR
+Nom de la configuration : 
+Ordinateur : DESKTOP-DS1ESG6 (Microsoft Windows NT 10.0.19045.0)
+Application hôte : powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\ARTHUR\Downloads\toolscm_1\toolscm\push-toolscm.ps1
+ID de processus : 14652
+PSVersion: 5.1.19041.6456
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.6456
+BuildVersion: 10.0.19041.6456
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+git: git version 2.55.0.windows.2
+
+=== where this copy is ===
+6a6fbe9 (HEAD -> main, origin/main) Report the account requirement in AUDIT.md and AUDIT.fr.md
+1f6b5e6 Require an account to use the tools
+9cfb25c Add AUDIT.fr.md, the same report in French
+
+=== remote ===
+
+origin  https://github.com/legendfotso-source/toolscm.git (fetch)
+origin  https://github.com/legendfotso-source/toolscm.git (push)
+
+=== what changed ===

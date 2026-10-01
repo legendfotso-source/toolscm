@@ -48,9 +48,24 @@ function loadCore() {
   mkdirSync(src, { recursive: true });
   mkdirSync(shim, { recursive: true });
 
-  for (const name of ["core.ts", "term.ts", "tiers.ts"]) {
+  for (const name of ["core.ts", "term.ts", "tiers.ts", "plans.ts", "receipt.ts"]) {
     copyFileSync(join(root, "src", "lib", "payments", name), join(src, name));
   }
+
+  // claims.ts is the approval queue: the code that turns "I have paid" into a
+  // subscription. It reaches two modules outside this folder, both by alias,
+  // so the specifiers are flattened the same mechanical way entitlement.ts is.
+  writeFileSync(
+    join(src, "claims.ts"),
+    readFileSync(join(root, "src", "lib", "payments", "claims.ts"), "utf8")
+      .replace('from "@/lib/settings"', 'from "./settings"'),
+  );
+
+  writeFileSync(
+    join(src, "settings.ts"),
+    readFileSync(join(root, "src", "lib", "settings.ts"), "utf8")
+      .replace('from "./supabase/admin"', 'from "@/lib/supabase/admin"'),
+  );
 
   // entitlement.ts is the read side of the same question — who is on which
   // plan — and it is what every page consults. It is copied here too, with
@@ -101,6 +116,11 @@ function loadCore() {
         moduleResolution: "bundler",
         skipLibCheck: true,
         strict: false,
+        // entitlement.ts reads OWNER_EMAILS off process.env, so the harness
+        // needs Node's globals. Resolved out of the project's own
+        // node_modules rather than installed again.
+        types: ["node"],
+        typeRoots: [join(root, "node_modules", "@types")],
         baseUrl: out,
         paths: {
           "server-only": ["shim/server-only.ts"],
@@ -109,7 +129,16 @@ function loadCore() {
           "@supabase/supabase-js": ["shim/supabase.ts"],
         },
       },
-      files: ["src/core.ts", "src/term.ts", "src/tiers.ts", "src/entitlement.ts"],
+      files: [
+        "src/core.ts",
+        "src/term.ts",
+        "src/tiers.ts",
+        "src/entitlement.ts",
+        "src/plans.ts",
+        "src/receipt.ts",
+        "src/settings.ts",
+        "src/claims.ts",
+      ],
     }),
   );
 
@@ -131,6 +160,10 @@ function loadCore() {
     "src/term.js",
     "src/tiers.js",
     "src/entitlement.js",
+    "src/plans.js",
+    "src/receipt.js",
+    "src/settings.js",
+    "src/claims.js",
     "shim/admin.js",
     "shim/session.js",
     "shim/server-only.js",
@@ -161,7 +194,10 @@ const out = loadCore();
 const core = await import(join(out, "src", "core.js"));
 // The tier table is plain data with no Supabase in it, so it compiles and
 // imports alongside core.ts and can be asserted on directly.
-const { TIERS, tierOf, tierPriceXaf } = await import(join(out, "src", "tiers.js"));
+const { TIERS, TIER_IDS, ALL_TIER_IDS, NO_LIMIT, tierOf, tierPriceXaf, tierAtLeast, fileSizeLimit, batchLimit } =
+  await import(join(out, "src", "tiers.js"));
+const claims = await import(join(out, "src", "claims.js"));
+const settingsModule = await import(join(out, "src", "settings.js"));
 const entitlement = await import(join(out, "src", "entitlement.js"));
 const stub = await import(join(out, "shim", "admin.js"));
 const session = await import(join(out, "shim", "session.js"));
@@ -702,6 +738,339 @@ await check("a signed-out visitor is free even with a subscription in the table"
   assert.equal(seen.userId, null);
   session.setUser({ id: "user-1" });
   return "no session, no plan";
+});
+
+/* ---------------- the unlimited account ---------------- */
+
+await check("the unlimited tier exists, is above Max, and caps nothing", async () => {
+  assert.equal(TIERS.owner.dailyOperations, -1, "a daily cap on the owner");
+  assert.equal(TIERS.owner.batchFiles, NO_LIMIT, "a batch cap on the owner");
+  assert.equal(TIERS.owner.fileSizeMultiplier, NO_LIMIT, "a size cap on the owner");
+  assert.equal(TIERS.owner.zipDownload, true);
+
+  assert.equal(tierAtLeast("owner", "max"), true, "owner must outrank Max");
+  assert.equal(tierAtLeast("max", "owner"), false, "Max must not reach owner");
+
+  // Whatever the tool's own ceiling is, the owner is never stopped by it.
+  // A 400 MB upload is well past every per-tool figure in the catalogue.
+  const huge = 400 * 1024 * 1024;
+  assert.ok(fileSizeLimit("owner", 25 * 1024 * 1024) > huge, "the owner hit a size ceiling");
+  assert.ok(fileSizeLimit("max", 25 * 1024 * 1024) < huge, "Max was accidentally unlimited too");
+  assert.ok(batchLimit("owner", true) > 10_000, "the owner hit a batch ceiling");
+
+  // And it survives a trip through JSON, which Infinity would not: the
+  // limits cross into the browser as part of the usage response, and
+  // `null > size` is false — the unlimited account would have ended up with
+  // the tightest limit of the four.
+  const roundTripped = JSON.parse(JSON.stringify({ limit: fileSizeLimit("owner", 1024) })).limit;
+  assert.equal(typeof roundTripped, "number", "the owner's limit did not survive JSON");
+  assert.ok(roundTripped > huge);
+  return "above Max, nothing capped, and still a number after JSON";
+});
+
+await check("unlimited cannot be bought, and no payment can reach it", async () => {
+  // Not on the pricing page.
+  assert.deepEqual(TIER_IDS, ["free", "pro", "max"], "owner leaked onto the pricing page");
+  assert.deepEqual(ALL_TIER_IDS, ["free", "pro", "max", "owner"]);
+
+  // Not readable out of a subscription row, however that row got there.
+  assert.equal(tierOf("owner"), "free", "a subscription row saying owner granted it");
+  assert.equal(tierPriceXaf(2000, "owner"), 0);
+
+  // And a payment that names it does not produce it. This is the attack worth
+  // testing: a provider webhook, or an admin typo, carrying tier: "owner".
+  const client = world();
+  await core.grantPro({
+    userId: "user-1",
+    provider: "manual",
+    transactionId: "tries-to-buy-owner",
+    amount: 2000,
+    currency: "XAF",
+    tier: "owner",
+  });
+  stub.setClient(client);
+  session.setUser({ id: "user-1" });
+  const seen = await entitlement.getEntitlement();
+  assert.notEqual(seen.tier, "owner", "a payment bought the unlimited tier");
+  return "absent from the pricing page, unreadable from a subscription, unbuyable";
+});
+
+await check("the owner's own account reads as unlimited, from the profile flag", async () => {
+  const far = new Date(Date.now() + 20 * 86_400_000).toISOString();
+  const client = createFakeClient({
+    profiles: [
+      { id: "user-1", email: "legendfotso@gmail.com", is_admin: true, is_unlimited: true },
+    ],
+    // A short Pro subscription as well, to prove the flag wins: the answer
+    // must not become "Pro until the 12th" for an account that has no limits.
+    subscriptions: [{ id: "sub-1", user_id: "user-1", status: "active", end_date: far, tier: "pro" }],
+  });
+  stub.setClient(client);
+  session.setUser({ id: "user-1", email: "legendfotso@gmail.com" });
+
+  const seen = await entitlement.getEntitlement();
+  assert.equal(seen.tier, "owner", "the flag did not grant unlimited");
+  assert.equal(seen.isPro, true, "unlimited must pass every paid gate");
+  assert.equal(seen.proUntil, null, "unlimited must not look like it expires");
+  return "the flag wins over the subscription, and never expires";
+});
+
+await check("OWNER_EMAILS sets the flag once, and only for the address named", async () => {
+  const client = createFakeClient({
+    profiles: [
+      { id: "user-1", email: "legendfotso@gmail.com", is_admin: true, is_unlimited: false },
+      { id: "user-2", email: "someone@example.com", is_admin: false, is_unlimited: false },
+    ],
+  });
+  stub.setClient(client);
+
+  const before = process.env.OWNER_EMAILS;
+  try {
+    // Written with the wrong case and a stray space on purpose: people do not
+    // type their own address the same way twice.
+    process.env.OWNER_EMAILS = " LegendFotso@Gmail.com ";
+
+    session.setUser({ id: "user-1", email: "legendfotso@gmail.com" });
+    assert.equal((await entitlement.getEntitlement()).tier, "owner", "the owner was not promoted");
+    assert.equal(client.store.profiles[0].is_unlimited, true, "the flag was not persisted");
+
+    session.setUser({ id: "user-2", email: "someone@example.com" });
+    const other = await entitlement.getEntitlement();
+    assert.equal(other.tier, "free", "somebody else was given unlimited access");
+    assert.equal(client.store.profiles[1].is_unlimited, false);
+
+    // Clearing the variable must not take the access away: the column is the
+    // authority once it has been written, which is what makes the variable
+    // safe to delete after the first sign-in.
+    delete process.env.OWNER_EMAILS;
+    session.setUser({ id: "user-1", email: "legendfotso@gmail.com" });
+    assert.equal((await entitlement.getEntitlement()).tier, "owner", "clearing the env revoked it");
+  } finally {
+    if (before === undefined) delete process.env.OWNER_EMAILS;
+    else process.env.OWNER_EMAILS = before;
+    session.setUser({ id: "user-1" });
+  }
+  return "case-insensitive, one address only, and the column outlives the variable";
+});
+
+await check("an account with no flag column is simply not unlimited", async () => {
+  // The window between pushing the code and running 0003 by hand in the
+  // Supabase SQL editor. Before this was handled, every read of the column
+  // failed — and a failed read must not become a granted plan, nor take away
+  // a subscription somebody paid for.
+  const far = new Date(Date.now() + 20 * 86_400_000).toISOString();
+  const client = createFakeClient(
+    {
+      profiles: [{ id: "user-1", email: "client@example.com", is_admin: false }],
+      subscriptions: [
+        { id: "sub-1", user_id: "user-1", status: "active", end_date: far, tier: "max" },
+      ],
+    },
+    { missingColumns: ["is_unlimited"] },
+  );
+  stub.setClient(client);
+  session.setUser({ id: "user-1", email: "client@example.com" });
+
+  const refused = await client.from("profiles").select("is_unlimited");
+  assert.equal(refused.error?.code, "42703", "the fake did not reproduce a missing column");
+
+  const seen = await entitlement.getEntitlement();
+  assert.equal(seen.tier, "max", "a pre-migration database lost a paid plan");
+  return "pre-migration: not unlimited, and Max is still Max";
+});
+
+/* ---------------- the approval queue ---------------- */
+
+/** A world with one customer, one admin, and the settings the queue prices from. */
+function queueWorld() {
+  const client = createFakeClient({
+    profiles: [
+      { id: "user-1", email: "client@example.com", is_admin: false },
+      { id: "admin-1", email: "legendfotso@gmail.com", is_admin: true },
+    ],
+  });
+  stub.setClient(client);
+  settingsModule.invalidateSettingsCache();
+  return client;
+}
+
+await check("a claim is priced by the server, not by what was sent", async () => {
+  const client = queueWorld();
+
+  const created = await claims.createClaim({
+    userId: "user-1",
+    tier: "max",
+    plan: "monthly",
+    transactionId: "MP260930.1432.A1",
+    operator: "MTN",
+    phone: "677000000",
+    // Deliberately present and deliberately absurd. `createClaim` takes no
+    // amount at all, so this must be ignored rather than stored.
+    amount: 1,
+  });
+
+  assert.equal(created.ok, true, "a good claim was refused");
+  const row = client.store.payment_claims[0];
+  assert.equal(row.amount, tierPriceXaf(2000, "max"), "the browser set the price");
+  assert.equal(row.amount, 5000);
+  assert.equal(row.tier, "max");
+  assert.equal(row.days, 30);
+  assert.equal(row.status, "pending", "a claim must grant nothing on arrival");
+
+  // Nothing has been granted yet. This is the whole promise of the row.
+  assert.equal(client.store.payments.length, 0, "a claim created a payment");
+  assert.equal(client.store.subscriptions.length, 0, "a claim created a subscription");
+  return "5,000 FCFA from the server's own settings; no payment, no subscription";
+});
+
+await check("the same reference cannot be claimed twice", async () => {
+  const client = queueWorld();
+  const first = await claims.createClaim({
+    userId: "user-1",
+    tier: "pro",
+    plan: "monthly",
+    transactionId: "MP260930.1432.A1",
+  });
+  assert.equal(first.ok, true);
+
+  // Decide it, so "already pending" is not what refuses the second one.
+  await claims.approveClaim(client.store.payment_claims[0].id, "admin-1");
+
+  // Same reference, different case and padding — the index is on
+  // lower(btrim(...)), so this is the same payment being claimed again.
+  const again = await claims.createClaim({
+    userId: "user-1",
+    tier: "max",
+    plan: "yearly",
+    transactionId: "  mp260930.1432.a1  ",
+  });
+  assert.equal(again.ok, false, "a reference was reused");
+  assert.equal(again.reason, "duplicate_reference");
+  assert.equal(client.store.payment_claims.length, 1);
+  return "one row, whatever the case or the spacing";
+});
+
+await check("one open request at a time", async () => {
+  const client = queueWorld();
+  await claims.createClaim({ userId: "user-1", tier: "pro", plan: "monthly", transactionId: "ref-1" });
+  const second = await claims.createClaim({
+    userId: "user-1",
+    tier: "pro",
+    plan: "monthly",
+    transactionId: "ref-2",
+  });
+  assert.equal(second.ok, false, "a second request was queued while the first was waiting");
+  assert.equal(second.reason, "already_pending");
+  assert.equal(client.store.payment_claims.length, 1);
+  return "a waiting customer does not need two places in the queue";
+});
+
+await check("approving a claim grants the term under the customer's own reference", async () => {
+  const client = queueWorld();
+  await claims.createClaim({
+    userId: "user-1",
+    tier: "max",
+    plan: "quarterly",
+    transactionId: "MP-REAL-REF",
+    operator: "Orange",
+    phone: "699000000",
+  });
+  const claimId = client.store.payment_claims[0].id;
+
+  const decided = await claims.approveClaim(claimId, "admin-1", "vu sur le relevé");
+  assert.equal(decided.ok, true, "approving failed");
+  assert.equal(decided.status, "approved");
+  assert.equal(decided.duplicate, false);
+
+  // The payment is recorded under the Mobile Money reference, so it can be
+  // reconciled against a real statement rather than against a number we made
+  // up — and so a second approval cannot grant a second term.
+  assert.equal(client.store.payments.length, 1);
+  assert.equal(client.store.payments[0].transaction_id, "MP-REAL-REF");
+  assert.equal(client.store.payments[0].provider, "manual");
+  assert.equal(client.store.payments[0].tier, "max");
+  assert.equal(client.store.payments[0].amount, tierPriceXaf(2000, "max") * 2.5);
+
+  // 3 months of Max, and the row says Max.
+  assert.equal(client.store.subscriptions.length, 1);
+  assert.equal(client.store.subscriptions[0].tier, "max");
+  assert.equal(days(new Date(), client.store.subscriptions[0].end_date), 90);
+
+  const row = client.store.payment_claims[0];
+  assert.equal(row.status, "approved");
+  assert.equal(row.reviewed_by, "admin-1", "the decision was not attributed to anybody");
+  assert.ok(row.reviewed_at, "the decision has no timestamp");
+  assert.equal(row.payment_id, client.store.payments[0].id, "the claim does not point at its payment");
+  assert.ok(decided.receipt?.reference, "no receipt reference for an approved payment");
+
+  session.setUser({ id: "user-1" });
+  assert.equal((await entitlement.getEntitlement()).tier, "max", "the customer did not get Max");
+  return "90 days of Max, recorded under MP-REAL-REF, attributed to the admin who approved it";
+});
+
+await check("approving twice grants one term, not two", async () => {
+  const client = queueWorld();
+  await claims.createClaim({ userId: "user-1", tier: "pro", plan: "monthly", transactionId: "ref-double" });
+  const claimId = client.store.payment_claims[0].id;
+
+  const first = await claims.approveClaim(claimId, "admin-1");
+  assert.equal(first.ok, true);
+  const end = client.store.subscriptions[0].end_date;
+
+  // Two admins on the queue at once, or one double tap on a phone.
+  const second = await claims.approveClaim(claimId, "admin-1");
+  assert.equal(second.ok, false, "a decided claim was approved again");
+  assert.equal(second.reason, "not_pending");
+
+  assert.equal(client.store.payments.length, 1, "a second payment row was written");
+  assert.equal(client.store.subscriptions[0].end_date, end, "the term was extended twice");
+  return "the second press is refused and nothing moves";
+});
+
+await check("refusing a claim grants nothing and keeps the reason", async () => {
+  const client = queueWorld();
+  await claims.createClaim({ userId: "user-1", tier: "pro", plan: "monthly", transactionId: "ref-bad" });
+  const claimId = client.store.payment_claims[0].id;
+
+  const decided = await claims.rejectClaim(claimId, "admin-1", "référence absente du relevé");
+  assert.equal(decided.ok, true);
+  assert.equal(decided.status, "rejected");
+
+  assert.equal(client.store.payments.length, 0, "a refused claim recorded a payment");
+  assert.equal(client.store.subscriptions.length, 0, "a refused claim granted access");
+
+  const row = client.store.payment_claims[0];
+  assert.equal(row.status, "rejected");
+  // The reason is for the customer, who otherwise cannot tell a typo from a
+  // refusal and gives up on the site instead of correcting it.
+  assert.equal(row.decision_note, "référence absente du relevé");
+
+  // And it cannot then be approved after the fact.
+  const late = await claims.approveClaim(claimId, "admin-1");
+  assert.equal(late.ok, false);
+  assert.equal(late.reason, "not_pending");
+  return "nothing granted, the reason kept, and no approving it afterwards";
+});
+
+await check("the queue is oldest first, and only what is waiting", async () => {
+  const client = queueWorld();
+  const now = Date.now();
+  client.store.payment_claims.push(
+    { id: "c-new", user_id: "user-1", tier: "pro", days: 30, amount: 2000, currency: "XAF",
+      transaction_id: "r-new", status: "pending", created_at: new Date(now).toISOString() },
+    { id: "c-old", user_id: "user-1", tier: "pro", days: 30, amount: 2000, currency: "XAF",
+      transaction_id: "r-old", status: "pending", created_at: new Date(now - 86_400_000).toISOString() },
+    { id: "c-done", user_id: "user-1", tier: "pro", days: 30, amount: 2000, currency: "XAF",
+      transaction_id: "r-done", status: "approved", created_at: new Date(now - 2 * 86_400_000).toISOString() },
+  );
+
+  const pending = await claims.listClaims("pending");
+  assert.deepEqual(pending.map((claim) => claim.id), ["c-old", "c-new"],
+    "the queue is not in the order people have been waiting in");
+
+  const done = await claims.listClaims("approved");
+  assert.deepEqual(done.map((claim) => claim.id), ["c-done"]);
+  return "whoever has waited longest is at the top";
 });
 
 console.log("");

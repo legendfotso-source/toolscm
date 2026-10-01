@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { TIERS, tierName, type TierId } from "@/lib/payments/tiers";
+import { TIERS, batchLabel, tierName, type TierId } from "@/lib/payments/tiers";
 import type { PaidTier } from "@/lib/payments/plans";
 import { useState } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
@@ -152,10 +152,14 @@ export function AccountContent({
                     pricing page uses. A plan name on its own tells somebody
                     nothing about what they are allowed to do. */}
                 <p className="mt-2 text-[13px] leading-5 text-ink-soft">
-                  {isPro
+                  {tier === "owner"
                     ? fr
-                      ? `Usage étendu, sans limite quotidienne, jusqu'à ${TIERS[tier].batchFiles} fichiers à la fois sur les outils compatibles.`
-                      : `Extended use, no daily limit, up to ${TIERS[tier].batchFiles} files at a time on the tools that support it.`
+                      ? "Aucune limite : pas de quota quotidien, pas de limite de taille de fichier, pas de limite de lot."
+                      : "No limits at all: no daily quota, no file-size ceiling, no batch ceiling."
+                    : isPro
+                    ? fr
+                      ? `Usage étendu, sans limite quotidienne, ${batchLabel(tier, true)} fichiers à la fois sur les outils compatibles.`
+                      : `Extended use, no daily limit, ${batchLabel(tier, false)} files at a time on the tools that support it.`
                     : dailyLimit === null
                       ? fr
                         ? "Tous les outils sont actuellement illimités pour tout le monde."

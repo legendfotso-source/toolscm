@@ -23,9 +23,45 @@
  * unrepresentable.
  */
 
-export type TierId = "free" | "pro" | "max";
+export type TierId = "free" | "pro" | "max" | "owner";
 
-export const TIER_IDS: TierId[] = ["free", "pro", "max"];
+/** The tiers that can be bought and that the pricing page compares. */
+export type PublicTier = "free" | "pro" | "max";
+
+/**
+ * The tiers on the pricing page, cheapest first.
+ *
+ * `owner` is deliberately absent, and everything that shows or sells a plan
+ * reads THIS list rather than the table below. It is not a plan: it cannot be
+ * bought, it has no price, and putting it here would add a fourth column to
+ * the comparison table offering unlimited everything for nothing.
+ */
+export const TIER_IDS: PublicTier[] = ["free", "pro", "max"];
+
+/** Every tier that exists, weakest first. For ranking, never for display. */
+export const ALL_TIER_IDS: TierId[] = ["free", "pro", "max", "owner"];
+
+/**
+ * "No limit", as a number.
+ *
+ * Not `Infinity`: these values are compared, multiplied, passed to `slice`,
+ * and some of them cross into the browser as JSON — where `Infinity` becomes
+ * `null` and `null > 5` is false, so an unlimited account would end up with
+ * the tightest limit of all. A very large integer survives all four.
+ */
+export const NO_LIMIT = Number.MAX_SAFE_INTEGER;
+
+/** Where a tier sits in the order. Higher is better. */
+export function tierRank(tier: TierId): number {
+  const rank = ALL_TIER_IDS.indexOf(tier);
+  // An unknown value ranks lowest rather than highest: a typo must not grant.
+  return rank < 0 ? 0 : rank;
+}
+
+/** Is this tier one somebody can pay for? */
+export function isPublicTier(tier: TierId): tier is PublicTier {
+  return (TIER_IDS as TierId[]).includes(tier);
+}
 
 export type Tier = {
   id: TierId;
@@ -80,11 +116,37 @@ export const TIERS: Record<TierId, Tier> = {
     fileSizeMultiplier: 4,
     zipDownload: true,
   },
+  /**
+   * The owner's own account. Nothing is capped.
+   *
+   * Not a plan and not for sale: it is granted by `profiles.is_unlimited`, a
+   * column only the service role can write, and it can never be reached
+   * through a payment — `tierOf()` below will not return it whatever a
+   * subscription row says, and `TIER_IDS` leaves it off the pricing page.
+   *
+   * Fortune runs this site and tests every tool on it; being stopped by his
+   * own daily allowance while checking whether compression works on a
+   * 400 MB PDF is not a limit that protects anything.
+   */
+  owner: {
+    id: "owner",
+    priceMultiplier: 0,
+    dailyOperations: -1,
+    batchFiles: NO_LIMIT,
+    fileSizeMultiplier: NO_LIMIT,
+    zipDownload: true,
+  },
 };
 
+/**
+ * Read a tier out of the database.
+ *
+ * Anything unrecognised is free: a corrupt or unexpected value must not
+ * accidentally grant a paid plan. `owner` is unrecognised ON PURPOSE — it is
+ * granted by a profile flag, so a subscription row saying "owner", however it
+ * got there, buys nothing.
+ */
 export function tierOf(value: string | null | undefined): TierId {
-  // Anything unrecognised is free. A corrupt or unexpected value in the
-  // database must not accidentally grant a paid plan.
   return value === "pro" || value === "max" ? value : "free";
 }
 
@@ -108,6 +170,7 @@ export function tierPriceUsdCents(monthlyUsdCents: number, tier: TierId): number
 }
 
 export function tierName(tier: TierId, fr: boolean): string {
+  if (tier === "owner") return fr ? "Illimité" : "Unlimited";
   if (tier === "max") return "Max";
   if (tier === "pro") return "Pro";
   return fr ? "Gratuit" : "Free";
@@ -115,7 +178,14 @@ export function tierName(tier: TierId, fr: boolean): string {
 
 /** True when `have` is at least as good as `need`. */
 export function tierAtLeast(have: TierId, need: TierId): boolean {
-  return TIER_IDS.indexOf(have) >= TIER_IDS.indexOf(need);
+  return tierRank(have) >= tierRank(need);
+}
+
+/** How many files at a time, in words — because NO_LIMIT is not a number to show. */
+export function batchLabel(tier: TierId, fr: boolean): string {
+  const files = TIERS[tier].batchFiles;
+  if (files >= NO_LIMIT) return fr ? "autant que vous voulez" : "as many as you like";
+  return fr ? `jusqu'à ${files}` : `up to ${files}`;
 }
 
 /**
@@ -130,5 +200,10 @@ export function batchLimit(tier: TierId, toolTakesMultiple: boolean): number {
 
 /** The size ceiling for one file, in bytes, for this tier and this tool. */
 export function fileSizeLimit(tier: TierId, toolMaxBytes: number): number {
-  return Math.round(toolMaxBytes * TIERS[tier].fileSizeMultiplier);
+  const multiplier = TIERS[tier].fileSizeMultiplier;
+  // Multiplying by NO_LIMIT would overflow into Infinity, which does not
+  // survive a trip through JSON. Return the sentinel itself instead: every
+  // real file is smaller than it, and it is still a number.
+  if (multiplier >= NO_LIMIT) return NO_LIMIT;
+  return Math.round(toolMaxBytes * multiplier);
 }

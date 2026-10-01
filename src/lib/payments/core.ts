@@ -1,5 +1,5 @@
 import "server-only";
-import { TIER_IDS, tierOf, type TierId } from "./tiers";
+import { tierOf, tierRank, type TierId } from "./tiers";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireAdminClient } from "@/lib/supabase/admin";
@@ -68,7 +68,7 @@ export type GrantResult = {
  */
 function bestTier(current: string | null | undefined, incoming: TierId): TierId {
   const a = tierOf(current);
-  return TIER_IDS.indexOf(a) > TIER_IDS.indexOf(incoming) ? a : incoming;
+  return tierRank(a) > tierRank(incoming) ? a : incoming;
 }
 
 /**

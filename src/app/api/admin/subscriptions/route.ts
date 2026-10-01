@@ -51,7 +51,21 @@ const Revoke = z.object({
   reason: z.string().trim().max(500).optional(),
 });
 
-const Body = z.discriminatedUnion("action", [Grant, Revoke]);
+/**
+ * Turn the no-limits flag on or off for one account.
+ *
+ * A separate action rather than a tier, because it is not one: there is no
+ * payment, no term and no end date. It writes `profiles.is_unlimited`, which
+ * `authenticated` has no UPDATE grant on, so this route is the only way it can
+ * change and only an admin can reach it.
+ */
+const Unlimited = z.object({
+  action: z.literal("unlimited"),
+  email: z.string().email(),
+  enabled: z.boolean(),
+});
+
+const Body = z.discriminatedUnion("action", [Grant, Revoke, Unlimited]);
 
 export async function POST(request: Request) {
   if (!(await isAdmin())) {
@@ -81,6 +95,26 @@ export async function POST(request: Request) {
     // but has not created an account yet, and the admin needs to know that
     // rather than guess.
     return NextResponse.json({ error: "no_such_account" }, { status: 404 });
+  }
+
+  if (parsed.data.action === "unlimited") {
+    const client = requireAdminClient();
+    const { error } = await client
+      .from("profiles")
+      .update({ is_unlimited: parsed.data.enabled })
+      .eq("id", userId);
+
+    if (error) {
+      // Said plainly rather than as a generic failure: the usual cause is that
+      // 0003_claims_and_unlimited.sql has not been run yet, and an admin
+      // staring at "the operation failed" has no way to guess that.
+      const migrationMissing = error.code === "42703";
+      return NextResponse.json(
+        { error: migrationMissing ? "migration_missing" : "write_failed" },
+        { status: migrationMissing ? 409 : 500 },
+      );
+    }
+    return NextResponse.json({ ok: true, action: "unlimited", enabled: parsed.data.enabled });
   }
 
   if (parsed.data.action === "revoke") {

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import type { Member } from "@/lib/admin";
+import { tierName, tierPriceXaf } from "@/lib/payments/tiers";
 import { Badge, Button, Card, Notice } from "./ui";
 
 /**
@@ -40,33 +41,19 @@ export function AdminMembers({
    * matters, because this button will mostly be pressed on a phone and phones
    * produce double taps.
    */
-  const setPro = async (member: Member, grant: boolean) => {
+  const send = async (member: Member, body: Record<string, unknown>, success: string) => {
     setBusy(member.email);
     setMessage(null);
     try {
       const response = await fetch("/api/admin/subscriptions", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          grant
-            ? { action: "grant", email: member.email, amount: priceXaf, currency: "XAF" }
-            : { action: "revoke", email: member.email },
-        ),
+        body: JSON.stringify({ email: member.email, ...body }),
       });
       const data = (await response.json()) as { ok?: boolean; duplicate?: boolean; error?: string };
 
       if (!response.ok || !data.ok) {
-        setMessage({
-          tone: "danger",
-          text:
-            data.error === "no_such_account"
-              ? fr
-                ? "Aucun compte avec cette adresse."
-                : "No account with that address."
-              : fr
-                ? "L'opération a échoué."
-                : "The operation failed.",
-        });
+        setMessage({ tone: "danger", text: explain(data.error, fr) });
         return;
       }
 
@@ -76,13 +63,7 @@ export function AdminMembers({
           ? fr
             ? `${member.email} avait déjà été activé aujourd'hui — rien n'a été ajouté.`
             : `${member.email} was already activated today — nothing was added.`
-          : grant
-            ? fr
-              ? `${member.email} est passé en Pro.`
-              : `${member.email} is now Pro.`
-            : fr
-              ? `L'accès Pro de ${member.email} a été retiré.`
-              : `Pro access for ${member.email} has been removed.`,
+          : success,
       });
       router.refresh();
     } catch {
@@ -91,6 +72,53 @@ export function AdminMembers({
       setBusy(null);
     }
   };
+
+  /**
+   * Give this person a plan, from the row itself.
+   *
+   * No transaction id is sent. The server then derives a reference that is
+   * stable for this person for today, so a second tap extends nothing — which
+   * matters, because this button will mostly be pressed on a phone and phones
+   * produce double taps. The amount sent is the real price of the tier chosen,
+   * so the revenue figure on this page stays true.
+   */
+  const grant = (member: Member, tier: "pro" | "max") =>
+    send(
+      member,
+      { action: "grant", tier, amount: tierPriceXaf(priceXaf, tier), currency: "XAF" },
+      fr
+        ? `${member.email} est passé en ${tierName(tier, true)}.`
+        : `${member.email} is now ${tierName(tier, false)}.`,
+    );
+
+  const revoke = (member: Member) =>
+    send(
+      member,
+      { action: "revoke" },
+      fr
+        ? `L'accès payant de ${member.email} a été retiré.`
+        : `Paid access for ${member.email} has been removed.`,
+    );
+
+  /**
+   * The no-limits switch.
+   *
+   * Deliberately NOT one of the plan buttons: it is not a plan, there is no
+   * payment behind it and no date it runs out. It is for the owner's own
+   * account and for anybody Fortune decides to hand the whole site to.
+   */
+  const setUnlimited = (member: Member, enabled: boolean) =>
+    send(
+      member,
+      { action: "unlimited", enabled },
+      enabled
+        ? fr
+          ? `${member.email} n'a plus aucune limite.`
+          : `${member.email} now has no limits at all.`
+        : fr
+          ? `Les limites normales s'appliquent à nouveau à ${member.email}.`
+          : `The normal limits apply to ${member.email} again.`,
+    );
 
   const date = (value: string) =>
     new Date(value).toLocaleDateString(fr ? "fr-FR" : "en-GB", {
@@ -136,8 +164,8 @@ export function AdminMembers({
             />
             <span className="shrink-0 text-[12.5px] text-ink-soft">
               {fr
-                ? `${members.length} compte${members.length > 1 ? "s" : ""} · ${proCount} Pro`
-                : `${members.length} account${members.length > 1 ? "s" : ""} · ${proCount} Pro`}
+                ? `${members.length} compte${members.length > 1 ? "s" : ""} · ${proCount} payant${proCount > 1 ? "s" : ""}`
+                : `${members.length} account${members.length > 1 ? "s" : ""} · ${proCount} paying`}
             </span>
           </div>
 
@@ -173,23 +201,60 @@ export function AdminMembers({
                       <td className="py-2.5 pr-3">
                         <Access member={member} fr={fr} date={date} />
                       </td>
-                      <td className="py-2.5 text-right">
-                        <Button
-                          variant={member.proStatus === "active" ? "danger" : "primary"}
-                          className="!min-h-9 !px-3 !text-[12.5px]"
-                          disabled={busy === member.email}
-                          onClick={() => setPro(member, member.proStatus !== "active")}
-                        >
-                          {busy === member.email
-                            ? "…"
-                            : member.proStatus === "active"
-                              ? fr
-                                ? "Retirer Pro"
-                                : "Remove Pro"
-                              : fr
-                                ? "Activer Pro"
-                                : "Make Pro"}
-                        </Button>
+                      <td className="py-2.5">
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                          {/* Pro and Max side by side rather than one button
+                              that cycles. An admin confirming a 5,000 FCFA
+                              transfer should be able to grant Max in one tap,
+                              not grant Pro and then upgrade it. */}
+                          <Button
+                            variant={member.tier === "pro" ? "secondary" : "primary"}
+                            className="!min-h-9 !px-3 !text-[12.5px]"
+                            disabled={busy === member.email}
+                            onClick={() => grant(member, "pro")}
+                          >
+                            {busy === member.email ? "…" : "Pro"}
+                          </Button>
+                          <Button
+                            variant={member.tier === "max" ? "secondary" : "primary"}
+                            className="!min-h-9 !px-3 !text-[12.5px]"
+                            disabled={busy === member.email}
+                            onClick={() => grant(member, "max")}
+                          >
+                            {busy === member.email ? "…" : "Max"}
+                          </Button>
+                          <Button
+                            variant={member.isUnlimited ? "danger" : "secondary"}
+                            className="!min-h-9 !px-3 !text-[12.5px]"
+                            disabled={busy === member.email}
+                            onClick={() => setUnlimited(member, !member.isUnlimited)}
+                            title={
+                              fr
+                                ? "Aucune limite : ni quota, ni taille de fichier, ni lot. Ne se périme pas."
+                                : "No limits at all: no quota, no file size, no batch. Never expires."
+                            }
+                          >
+                            {busy === member.email
+                              ? "…"
+                              : member.isUnlimited
+                                ? fr
+                                  ? "Retirer illimité"
+                                  : "Remove unlimited"
+                                : fr
+                                  ? "Illimité"
+                                  : "Unlimited"}
+                          </Button>
+                          {member.proStatus === "active" ? (
+                            <Button
+                              variant="danger"
+                              className="!min-h-9 !px-3 !text-[12.5px]"
+                              disabled={busy === member.email}
+                              onClick={() => revoke(member)}
+                            >
+                              {busy === member.email ? "…" : fr ? "Retirer" : "Remove"}
+                            </Button>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -206,8 +271,8 @@ export function AdminMembers({
 
           <p className="mt-4 text-[12px] leading-5 text-ink-soft">
             {fr
-              ? `« Activer Pro » enregistre un paiement manuel de ${priceXaf.toLocaleString("fr-FR")} FCFA et donne un mois. Appuyer deux fois le même jour n'ajoute rien. Pour enregistrer l'identifiant de transaction Mobile Money, utilisez le bloc « Activer Pro » plus haut.`
-              : `"Make Pro" records a manual payment of ${priceXaf.toLocaleString("en-GB")} FCFA and grants one month. Pressing it twice on the same day adds nothing. To record the Mobile Money transaction id, use the "Activate Pro" block above.`}
+              ? `« Pro » et « Max » enregistrent un paiement manuel (${tierPriceXaf(priceXaf, "pro").toLocaleString("fr-FR")} ou ${tierPriceXaf(priceXaf, "max").toLocaleString("fr-FR")} FCFA) et donnent un mois. Appuyer deux fois le même jour n'ajoute rien. « Illimité » n'est pas une formule : aucun paiement, aucune date de fin, aucune limite. Pour enregistrer l'identifiant Mobile Money, utilisez le bloc plus haut — ou approuvez la demande du client dans « Paiements à confirmer ».`
+              : `"Pro" and "Max" record a manual payment (${tierPriceXaf(priceXaf, "pro").toLocaleString("en-GB")} or ${tierPriceXaf(priceXaf, "max").toLocaleString("en-GB")} FCFA) and grant one month. Pressing one twice on the same day adds nothing. "Unlimited" is not a plan: no payment, no end date, no caps. To record the Mobile Money reference, use the block above — or approve the customer's own request in "Payments to confirm".`}
           </p>
 
           <p className="mt-2 text-[12px] leading-5 text-ink-soft">
@@ -221,6 +286,26 @@ export function AdminMembers({
   );
 }
 
+/**
+ * What went wrong, in a sentence an admin can act on.
+ *
+ * `migration_missing` is the one worth naming: the usual cause of a refused
+ * "Illimité" is that 0003_claims_and_unlimited.sql has not been run in the
+ * Supabase SQL editor yet, and "the operation failed" gives nobody a way to
+ * guess that.
+ */
+function explain(error: string | undefined, fr: boolean): string {
+  if (error === "no_such_account") {
+    return fr ? "Aucun compte avec cette adresse." : "No account with that address.";
+  }
+  if (error === "migration_missing") {
+    return fr
+      ? "La base n'a pas encore la colonne « is_unlimited ». Exécutez 0003_claims_and_unlimited.sql dans l'éditeur SQL Supabase, puis réessayez."
+      : "The database does not have the \u201cis_unlimited\u201d column yet. Run 0003_claims_and_unlimited.sql in the Supabase SQL editor, then try again.";
+  }
+  return fr ? "L'opération a échoué." : "The operation failed.";
+}
+
 function Access({
   member,
   fr,
@@ -230,20 +315,29 @@ function Access({
   fr: boolean;
   date: (value: string) => string;
 }) {
+  // The flag wins over everything, because that is what it does: an unlimited
+  // account is unlimited whether or not it also has a subscription, and
+  // showing "Pro until the 12th" for one would be wrong in the direction that
+  // makes somebody re-grant a plan nobody needs.
+  if (member.isUnlimited) {
+    return <Badge tone="violet">{fr ? "Illimité" : "Unlimited"}</Badge>;
+  }
+
   if (member.proStatus === "active") {
+    const plan = tierName(member.tier, fr);
     return (
       <Badge tone="success">
         {member.proUntil
           ? fr
-            ? `Pro jusqu'au ${date(member.proUntil)}`
-            : `Pro until ${date(member.proUntil)}`
-          : "Pro"}
+            ? `${plan} jusqu'au ${date(member.proUntil)}`
+            : `${plan} until ${date(member.proUntil)}`
+          : plan}
       </Badge>
     );
   }
 
   if (member.proStatus === "expired") {
-    return <Badge tone="warn">{fr ? "Pro expiré" : "Pro expired"}</Badge>;
+    return <Badge tone="warn">{fr ? "Accès expiré" : "Access expired"}</Badge>;
   }
 
   if (member.proStatus === "pending") {

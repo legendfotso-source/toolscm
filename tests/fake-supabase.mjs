@@ -179,10 +179,32 @@ class Query {
           }
         }
 
+        // payment_claims_reference — unique on lower(btrim(transaction_id)),
+        // so the comparison here is case- and space-insensitive too. A fake
+        // that only matched exact strings would let a test pass that the real
+        // database rejects, which is worse than having no test.
+        if (this.table === "payment_claims") {
+          const key = String(values.transaction_id ?? "").trim().toLowerCase();
+          const clash = rows.some(
+            (row) => String(row.transaction_id ?? "").trim().toLowerCase() === key,
+          );
+          if (clash) {
+            return {
+              data: null,
+              error: {
+                code: "23505",
+                message:
+                  'duplicate key value violates unique constraint "payment_claims_reference"',
+              },
+            };
+          }
+        }
+
         const row = {
           id: nextId(),
           created_at: new Date().toISOString(),
           subscription_id: null,
+          ...(DEFAULTS[this.table] ?? {}),
           ...values,
         };
         rows.push(row);
@@ -235,9 +257,21 @@ class Query {
       .map((part) => part.trim())
       .filter(Boolean);
     if (wanted.length === 0) return rows;
+
+    // "*, profiles(email)" asks for every column of this row PLUS an embedded
+    // resource. Projecting that list literally produced rows whose only keys
+    // were "*" and "profiles(email)", both undefined — a shape no database
+    // ever returns, and one that made a passing test out of broken code.
+    const all = wanted.includes("*");
+    const embeds = wanted.filter((column) => column.includes("("));
+    const plain = wanted.filter((column) => column !== "*" && !column.includes("("));
+
     return rows.map((row) => {
-      const picked = {};
-      for (const column of wanted) picked[column] = row[column];
+      const picked = all ? { ...row } : {};
+      for (const column of plain) picked[column] = row[column];
+      // The fake does not join. Null is what PostgREST returns for an embed
+      // with nothing on the other side, and the real code already handles it.
+      for (const embed of embeds) picked[embed.slice(0, embed.indexOf("("))] = null;
       return picked;
     });
   }
@@ -266,6 +300,21 @@ class Query {
   }
 }
 
+/**
+ * Column defaults the real schema applies on INSERT.
+ *
+ * Without these, a row written here is missing whatever the migration fills in
+ * — and `status` undefined is not `status = 'pending'`. A claim inserted
+ * without it was invisible to the queue and could never be approved, which is
+ * a bug the production table does not have and this fake invented.
+ */
+const DEFAULTS = {
+  payment_claims: { status: "pending", days: 30, currency: "XAF", operator: null, phone: null,
+                    note: null, decision_note: null, reviewed_at: null, reviewed_by: null,
+                    payment_id: null },
+  subscriptions: { tier: "pro" },
+};
+
 export function createFakeClient(seed = {}, { missingColumns = [] } = {}) {
   const store = {
     payments: [],
@@ -274,6 +323,7 @@ export function createFakeClient(seed = {}, { missingColumns = [] } = {}) {
     usage_logs: [],
     admin_settings: [],
     tool_events: [],
+    payment_claims: [],
     ...seed,
   };
 

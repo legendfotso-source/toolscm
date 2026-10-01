@@ -10,6 +10,7 @@ import { AdminReminders } from "./AdminReminders";
 import { AdminActivity } from "./AdminActivity";
 import { AdminAudience } from "./AdminAudience";
 import { AdminMembers } from "./AdminMembers";
+import { AdminClaims } from "./AdminClaims";
 import { Button, Card, Notice, SectionHeading, cx } from "./ui";
 
 export function AdminDashboard({
@@ -204,6 +205,12 @@ export function AdminDashboard({
         <AdminReminders expiring={stats.expiring} priceXaf={settings.price_xaf} />
 
         <AdminActivity stats={stats} />
+      </div>
+
+      {/* Above the members table on purpose: somebody who has just paid is
+          waiting, and that is the most time-sensitive thing on this page. */}
+      <div className="mt-6">
+        <AdminClaims />
       </div>
 
       <div className="mt-6">
