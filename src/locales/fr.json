@@ -311,7 +311,8 @@
     "proUntil": "Actif jusqu'au {date}",
     "notConfigured": "Les comptes ne sont pas encore activés sur ce déploiement.",
     "working": "Un instant...",
-    "forgotPassword": "Mot de passe oublié ?"
+    "forgotPassword": "Mot de passe oublié ?",
+    "adminLink": "Administration"
   },
   "batch": {
     "limitFree": "Le plan Gratuit traite {max} fichiers à la fois. Les fichiers en trop n'ont pas été ajoutés — passez à Pro pour en traiter {pro} d'un coup.",

@@ -311,7 +311,8 @@
     "proUntil": "Active until {date}",
     "notConfigured": "Accounts are not enabled on this deployment yet.",
     "working": "One moment...",
-    "forgotPassword": "Forgotten your password?"
+    "forgotPassword": "Forgotten your password?",
+    "adminLink": "Administration"
   },
   "batch": {
     "limitFree": "The Free plan processes {max} files at a time. The extra files were not added — Pro processes {pro} at once.",

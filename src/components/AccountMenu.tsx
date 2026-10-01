@@ -7,6 +7,7 @@ import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { browserClient } from "@/lib/supabase/browser";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import { initialFor, useAuthUser } from "@/lib/useAuthUser";
+import { useUsage } from "@/lib/usage/useUsage";
 import { cx } from "./ui";
 
 /**
@@ -26,6 +27,7 @@ export function AccountMenu({ variant = "desktop" }: { variant?: "desktop" | "mo
   const { t } = useLocale();
   const router = useRouter();
   const { user, known } = useAuthUser();
+  const { isAdmin } = useUsage();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const wrapper = useRef<HTMLDivElement>(null);
@@ -99,6 +101,14 @@ export function AccountMenu({ variant = "desktop" }: { variant?: "desktop" | "mo
           <Avatar user={user} size={28} />
           <span className="min-w-0 flex-1 truncate">{user.email}</span>
         </Link>
+        {isAdmin ? (
+          <Link
+            href="/admin"
+            className="rounded-lg px-3 py-3 text-[15px] font-semibold text-violet-deep hover:bg-surface-alt"
+          >
+            {t("auth.adminLink")}
+          </Link>
+        ) : null}
         <button
           type="button"
           onClick={signOut}
@@ -144,6 +154,21 @@ export function AccountMenu({ variant = "desktop" }: { variant?: "desktop" | "mo
           >
             {t("auth.account")}
           </Link>
+
+          {/* The way in to /admin from anywhere on the site. It is a signpost
+              and nothing more: /admin and both of its endpoints still answer
+              notFound() to anybody the server does not know as an
+              administrator, whatever the browser believes. */}
+          {isAdmin ? (
+            <Link
+              href="/admin"
+              role="menuitem"
+              onClick={() => setOpen(false)}
+              className="block px-4 py-2.5 text-[13.5px] font-semibold text-violet-deep hover:bg-surface-alt"
+            >
+              {t("auth.adminLink")}
+            </Link>
+          ) : null}
 
           <button
             type="button"

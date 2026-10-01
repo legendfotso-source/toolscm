@@ -5,13 +5,13 @@
 # checks below.
 #
 # It REFUSES rather than guesses. The copy of this repository on this PC is
-# expected to be at 2e775b6, the same commit GitHub has. If it is at anything
+# expected to be at 7ad2ef8, the same commit GitHub has. If it is at anything
 # else, somebody has worked in it since, and committing on top would quietly
 # bury that work. In that case the script stops and prints what it found.
 
 $root = 'C:\Users\ARTHUR\Downloads\toolscm_1\toolscm'
 $log = Join-Path $root 'push-log.txt'
-$expected = '2e775b6'
+$expected = '7ad2ef8'
 $remoteUrl = 'https://github.com/legendfotso-source/toolscm.git'
 
 Start-Transcript -Path $log -Force | Out-Null
@@ -72,38 +72,28 @@ try {
         Write-Output "Nothing to commit: this update is already committed here."
     } else {
         $message = @"
-Tell people which plan they are on, and a one-paste way to become the owner
+Put a way in to /admin on the site
 
-Fortune signed in on his own site and the upload box still said "PDF jusqu'a
-50,0 Mo". Three places where the interface never asked what plan the person is
-on, all the same bug, all pointing the same way - away from what somebody paid
-for:
+Fortune ran the SQL, reached /account, saw "Illimite" - and could not find the
+account list, because nothing on the site pointed at /admin. The screen had
+worked for days; the only way to reach it was to type the address.
 
-UploadZone printed tool.maxFileSize, the free figure, to everybody. A Max
-subscriber whose real ceiling is 200 MB was told 50, and nobody tries a 120 MB
-file when the page has just told them the limit is 50. It now shows
-displayedFileSizeLimit(tier, ...), and for the owner says there is no limit
-rather than printing MAX_SAFE_INTEGER bytes.
+This has now happened twice on this site. /signin worked for weeks while
+nothing linked to it, and the honest report from outside was "there is no
+Google sign-in". A page nobody can navigate to does not exist, however well it
+works.
 
-The header sold "Devenir Pro" to Pro subscribers, Max subscribers and the
-owner. Hidden by canUpgrade(tier), and hidden until the server has answered so
-it never flashes at them.
+getEntitlement now carries isAdmin, read from the SAME profile row as
+is_unlimited rather than a second query. It survives the pre-migration window:
+when is_unlimited does not exist yet, the fallback SELECT keeps asking for
+is_admin, so the order of the code deploy and the hand-run migration cannot
+decide who can reach /admin.
 
-useUsage is now one shared store rather than per-component state. The plan is
-needed in two places at once - the upload box and the header - and two
-components asking meant two GETs of the same endpoint on every page load.
-Built on useSyncExternalStore: one request between all subscribers, and the
-counter in the header can no longer disagree with the one on the page.
+The link is drawn on /account and in the account menu on every page. It is a
+signpost and nothing more: /admin and both of its endpoints still answer
+notFound() to anybody the server does not recognise.
 
-supabase/MAKE-ME-SUPERADMIN.sql sets is_admin and is_unlimited directly on the
-row, by email, case- and space-insensitively. The other two routes to those
-flags (ADMIN_EMAIL, OWNER_EMAILS) both run through Vercel and only act on the
-next deploy and the next sign-in; this one is a paste and a Run. It RAISES
-rather than warning when the account does not exist yet, because "Success" on
-a file that did nothing is how an hour gets spent looking somewhere else.
-
-Proven: 233 checks, up from 230. 55 database guarantees. Six more mutations,
-all caught.
+238 checks. Three more mutations, all caught.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01Ptx4ZF647YBxv6EfVtEvew

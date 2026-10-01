@@ -15,9 +15,23 @@ export type Entitlement = {
   userId: string | null;
   /** When the current paid term ends, if there is one. */
   proUntil: string | null;
+  /**
+   * Is this person an administrator?
+   *
+   * Carried here rather than fetched separately because the profile row it
+   * comes from is already being read for `is_unlimited` — asking twice for
+   * one row, on every page, to answer two questions about it.
+   */
+  isAdmin: boolean;
 };
 
-const FREE: Entitlement = { tier: "free", isPro: false, userId: null, proUntil: null };
+const FREE: Entitlement = {
+  tier: "free",
+  isPro: false,
+  userId: null,
+  proUntil: null,
+  isAdmin: false,
+};
 
 /** PostgreSQL's code for "that column does not exist". */
 const UNDEFINED_COLUMN = "42703";
@@ -81,14 +95,15 @@ export async function getEntitlement(): Promise<Entitlement> {
   // It is not a subscription — there is no end date to check and no payment
   // to have expired — so asking about subscriptions at all would only be a
   // way to get the answer wrong.
-  if (await hasUnlimited(client, user.id, user.email ?? "")) {
-    return { tier: "owner", isPro: true, userId: user.id, proUntil: null };
+  const flags = await profileFlags(client, user.id, user.email ?? "");
+  if (flags.isUnlimited) {
+    return { tier: "owner", isPro: true, userId: user.id, proUntil: null, isAdmin: flags.isAdmin };
   }
 
   // Evaluate expiry at read time rather than trusting a status column that a
   // cron job may not have updated yet.
   const row = await activeSubscription(client, user.id);
-  if (!row) return { ...FREE, userId: user.id };
+  if (!row) return { ...FREE, userId: user.id, isAdmin: flags.isAdmin };
 
   const stillValid = !row.end_date || new Date(row.end_date) > new Date();
 
@@ -100,19 +115,19 @@ export async function getEntitlement(): Promise<Entitlement> {
       .eq("user_id", user.id)
       .eq("status", "active")
       .lte("end_date", new Date().toISOString());
-    return { ...FREE, userId: user.id };
+    return { ...FREE, userId: user.id, isAdmin: flags.isAdmin };
   }
 
   // A paid row with no tier recorded is Pro: every subscription sold before
   // Max existed was a Pro subscription, and reading those as free would take
   // away something people paid for.
   const tier = tierOf(row.tier ?? "pro");
-  return { tier, isPro: true, userId: user.id, proUntil: row.end_date };
+  return { tier, isPro: true, userId: user.id, proUntil: row.end_date, isAdmin: flags.isAdmin };
 }
 
 
 /**
- * Does this account have the no-limits flag?
+ * The two flags that live on the profile row, read in one query.
  *
  * Read from `profiles.is_unlimited`, which `authenticated` has no UPDATE
  * grant on at all — so there is nothing here a user can set from the browser,
@@ -125,37 +140,40 @@ export async function getEntitlement(): Promise<Entitlement> {
  * never sent to the browser, and it writes the flag ONCE — after that the
  * column is the authority and the variable can be cleared.
  */
-async function hasUnlimited(
+async function profileFlags(
   client: NonNullable<ReturnType<typeof adminClient>>,
   userId: string,
   email: string,
-): Promise<boolean> {
-  const { data, error } = await client
-    .from("profiles")
-    .select("is_unlimited")
-    .eq("id", userId)
-    .maybeSingle();
+): Promise<{ isUnlimited: boolean; isAdmin: boolean }> {
+  const ask = (columns: string) =>
+    client.from("profiles").select(columns).eq("id", userId).maybeSingle();
 
-  // Pre-migration database: the column does not exist yet. Not an error worth
-  // failing over — the answer is simply "no" until 0003 has been run.
-  if (error?.code === UNDEFINED_COLUMN) return false;
-  if (!error && (data as { is_unlimited?: boolean } | null)?.is_unlimited === true) return true;
+  let result = await ask("is_unlimited, is_admin");
+  // Pre-migration database: `is_unlimited` does not exist yet. Ask again
+  // without it rather than losing the admin flag too — the order of the code
+  // deploy and the hand-run migration must not decide who can reach /admin.
+  if (result.error?.code === UNDEFINED_COLUMN) result = await ask("is_admin");
+
+  const row = result.data as { is_unlimited?: boolean; is_admin?: boolean } | null;
+  const isAdmin = !result.error && row?.is_admin === true;
+
+  if (!result.error && row?.is_unlimited === true) return { isUnlimited: true, isAdmin };
 
   const configured = (process.env.OWNER_EMAILS ?? "")
     .split(/[,;\s]+/)
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean);
   const mine = email.trim().toLowerCase();
-  if (!mine || !configured.includes(mine)) return false;
+  if (!mine || !configured.includes(mine)) return { isUnlimited: false, isAdmin };
 
   const write = await client.from("profiles").update({ is_unlimited: true }).eq("id", userId);
   if (write.error) {
     console.error("[Tools.cm] could not set is_unlimited:", write.error.message);
     // Say yes anyway. The variable named this address as the owner; failing to
     // persist that is a database problem, not a reason to cap the owner.
-    return write.error.code !== UNDEFINED_COLUMN;
+    return { isUnlimited: write.error.code !== UNDEFINED_COLUMN, isAdmin };
   }
 
   console.warn(`[Tools.cm] ${email} was given unlimited access from OWNER_EMAILS.`);
-  return true;
+  return { isUnlimited: true, isAdmin };
 }

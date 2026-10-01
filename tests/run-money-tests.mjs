@@ -907,6 +907,69 @@ await check("the upload box shows the ceiling this person has, not the tool's ow
   return "50 / 100 / 200 MB and no limit at all; the upgrade button only for free";
 });
 
+await check("an administrator is told so, and the flag never comes from the browser", async () => {
+  /**
+   * /admin had existed and worked for days, and nothing on the site pointed
+   * at it: the only way to reach the one screen listing every account was to
+   * type the address. The same thing had already happened to /signin in
+   * September — "Google sign-in does not exist" meant "nothing links to it".
+   * A page nobody can navigate to does not exist, however well it works.
+   *
+   * So the entitlement now carries `isAdmin`, read from the SAME profile row
+   * as the unlimited flag rather than a second query, and the account menu
+   * uses it to draw the way in. It is a signpost and nothing more: /admin
+   * still answers notFound() to anybody the server does not recognise.
+   */
+  const client = createFakeClient({
+    profiles: [
+      { id: "user-1", email: "legendfotso@gmail.com", is_admin: true, is_unlimited: true },
+      { id: "user-2", email: "paying@example.com", is_admin: false, is_unlimited: false },
+    ],
+    subscriptions: [
+      {
+        id: "sub-1",
+        user_id: "user-2",
+        status: "active",
+        end_date: new Date(Date.now() + 20 * 86_400_000).toISOString(),
+        tier: "max",
+      },
+    ],
+  });
+  stub.setClient(client);
+
+  session.setUser({ id: "user-1", email: "legendfotso@gmail.com" });
+  const owner = await entitlement.getEntitlement();
+  assert.equal(owner.isAdmin, true, "the owner is not told they are an administrator");
+  assert.equal(owner.tier, "owner", "and the two flags must come back together");
+
+  // A paying customer is not one — the admin flag has nothing to do with the
+  // plan, and Max must not become a way in.
+  session.setUser({ id: "user-2", email: "paying@example.com" });
+  const paying = await entitlement.getEntitlement();
+  assert.equal(paying.tier, "max");
+  assert.equal(paying.isAdmin, false, "a Max subscriber was made an administrator");
+
+  // Signed out: no.
+  session.setUser(null);
+  assert.equal((await entitlement.getEntitlement()).isAdmin, false);
+
+  // And a pre-migration database loses neither flag's meaning: the admin flag
+  // still reads, because the order of the code deploy and the hand-run
+  // migration must not decide who can reach /admin.
+  const old = createFakeClient(
+    { profiles: [{ id: "user-1", email: "legendfotso@gmail.com", is_admin: true }] },
+    { missingColumns: ["is_unlimited"] },
+  );
+  stub.setClient(old);
+  session.setUser({ id: "user-1", email: "legendfotso@gmail.com" });
+  const before = await entitlement.getEntitlement();
+  assert.equal(before.isAdmin, true, "an administrator lost /admin while 0003 was not yet run");
+  assert.equal(before.tier, "free", "and must not be unlimited before the column exists");
+
+  session.setUser({ id: "user-1" });
+  return "the owner is told, a Max subscriber is not, and a pre-migration database keeps the flag";
+});
+
 /* ---------------- the approval queue ---------------- */
 
 /** A world with one customer, one admin, and the settings the queue prices from. */

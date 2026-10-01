@@ -477,13 +477,13 @@ Every test suite was run against this version:
 | --- | --- |
 | `npm run test:config` | 21 |
 | `npm run test:layout` | 18, including a real `unzip -t` on an archive the code wrote |
-| `npm run test:money` | 40 |
+| `npm run test:money` | 41 |
 | `npm run test:payments` | 45 |
 | `npm run test:tools` | 48, in a real browser with real files |
 | `npm run test:db` | 56 guarantees against real PostgreSQL, every migration applied twice, each one alone, and the pasted file checked against the migrations it was built from |
 | `npm run test:access` | 9, in a real browser, as a signed-out visitor |
 
-That is **234 checks, all passing**, plus a clean type check, no lint errors,
+That is **238 checks, all passing**, plus a clean type check, no lint errors,
 a successful production build, and screenshots of the pricing page at 320 px
 and 1280 px.
 

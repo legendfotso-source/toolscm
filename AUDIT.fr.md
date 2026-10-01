@@ -501,13 +501,13 @@ Chaque suite de tests a été lancée sur cette version :
 | --- | --- |
 | `npm run test:config` | 21 |
 | `npm run test:layout` | 18, dont un vrai `unzip -t` sur une archive écrite par le code |
-| `npm run test:money` | 40 |
+| `npm run test:money` | 41 |
 | `npm run test:payments` | 45 |
 | `npm run test:tools` | 48, dans un vrai navigateur avec de vrais fichiers |
 | `npm run test:db` | 56 garanties sur un vrai PostgreSQL, chaque migration appliquée deux fois, puis seule, et le fichier à coller comparé aux migrations dont il est issu |
 | `npm run test:access` | 9, dans un vrai navigateur, en visiteur non connecté |
 
-Soit **234 vérifications, toutes réussies**, plus une vérification de types
+Soit **238 vérifications, toutes réussies**, plus une vérification de types
 propre, aucune erreur de lint, une compilation de production réussie, et des
 captures d'écran de la page Tarifs à 320 px et 1280 px.
 

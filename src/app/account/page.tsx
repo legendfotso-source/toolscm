@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { AccountContent } from "@/components/AccountContent";
 import { getEntitlement } from "@/lib/entitlement";
+import { isAdmin } from "@/lib/admin";
 import { getSettings } from "@/lib/settings";
 import { tierPriceXaf } from "@/lib/payments/tiers";
 import { currentUser } from "@/lib/supabase/server-client";
@@ -63,6 +64,7 @@ export default async function AccountPage() {
       dailyLimit={settings.limits_enabled ? settings.free_daily_limit : null}
       configured
       receipts={await receiptsFor(user.id, user.email ?? "", proUntil)}
+      isAdmin={await isAdmin()}
     />
   );
 }

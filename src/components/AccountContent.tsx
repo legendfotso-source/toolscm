@@ -25,6 +25,7 @@ export function AccountContent({
   dailyLimit,
   configured,
   receipts,
+  isAdmin = false,
 }: {
   email: string | null;
   name: string | null;
@@ -41,6 +42,11 @@ export function AccountContent({
   dailyLimit: number | null;
   configured: boolean;
   receipts: Receipt[];
+  /**
+   * Decided by the server, from the `is_admin` column. Never from the
+   * browser, and false by default — a missing prop must not open a door.
+   */
+  isAdmin?: boolean;
 }) {
   const { t, locale } = useLocale();
   const router = useRouter();
@@ -219,6 +225,18 @@ export function AccountContent({
             ) : null}
 
             <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+              {/* The way in to /admin.
+                  It existed for weeks and nothing on the site pointed at it,
+                  so the only way to reach the one screen that lists every
+                  account was to type the address. The same thing had already
+                  happened to /signin in September: a page nobody can navigate
+                  to does not exist, however well it works. Shown only to an
+                  administrator, and the server decides who that is. */}
+              {isAdmin ? (
+                <ButtonLink href="/admin" size="lg" className="flex-1">
+                  {t("auth.adminLink")}
+                </ButtonLink>
+              ) : null}
               <ButtonLink href="/pricing" variant="secondary" size="lg" className="flex-1">
                 {t("nav.pricing")}
               </ButtonLink>

@@ -80,7 +80,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "invalid_device" }, { status: 400 });
   }
 
-  const { tier, isPro } = await getEntitlement();
+  const { tier, isPro, isAdmin } = await getEntitlement();
   const verdict = await peekUsage(deviceId, tier);
   const settings = await getSettings();
 
@@ -90,6 +90,10 @@ export async function GET(request: Request) {
     reason: verdict.reason,
     isPro,
     tier,
+    // So the account menu can offer the way in to /admin. It is only a
+    // signpost: the page itself still returns notFound() to anybody the
+    // server does not recognise as an administrator.
+    isAdmin,
     // The monthly price of each paid plan, so the paywall inside a tool
     // quotes what the checkout would actually charge rather than a number
     // baked into the page at build time. Public information — it is on the

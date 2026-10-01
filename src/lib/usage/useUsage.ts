@@ -12,6 +12,8 @@ export type UsageState = {
   isPro: boolean;
   /** Which plan the SERVER says this person is on. Never set by the browser. */
   tier: TierId;
+  /** Set by the server. A signpost to /admin, never the thing that guards it. */
+  isAdmin: boolean;
   /**
    * Monthly price of each paid plan, as the server's settings have it. Null
    * until the server has answered, and when there is no server to ask.
@@ -28,6 +30,7 @@ const NO_LIMIT: Omit<UsageState, "known"> = {
   // Free until the server says otherwise. Defaulting the other way would
   // hand out Pro batch sizes to everyone for the first second of every page.
   tier: "free",
+  isAdmin: false,
   prices: null,
 };
 
