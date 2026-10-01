@@ -879,6 +879,34 @@ await check("an account with no flag column is simply not unlimited", async () =
   return "pre-migration: not unlimited, and Max is still Max";
 });
 
+await check("the upload box shows the ceiling this person has, not the tool's own", async () => {
+  /**
+   * The bug Fortune found on his own site, signed in, on 1 October 2026: the
+   * upload box printed "PDF jusqu'à 50,0 Mo" — the tool's own figure — to
+   * everybody. To a Max subscriber whose real ceiling is 200 MB, and to the
+   * owner, who has none. Nobody tries a 120 MB file when the page has just
+   * told them the limit is 50, so the thing they paid for is invisible.
+   */
+  const { displayedFileSizeLimit, canUpgrade } = await import(join(out, "src", "tiers.js"));
+  const tool = 50 * 1024 * 1024; // compress-pdf
+
+  assert.equal(displayedFileSizeLimit("free", tool), tool, "free should see the tool's figure");
+  assert.equal(displayedFileSizeLimit("pro", tool), tool * 2, "Pro is shown the free limit");
+  assert.equal(displayedFileSizeLimit("max", tool), tool * 4, "Max is shown the free limit");
+  assert.equal(displayedFileSizeLimit("owner", tool), null, "the owner is shown a number at all");
+
+  // null means "say there is no limit", not "say zero" — a 0 would render as
+  // "jusqu'à 0 o", which is worse than the bug being fixed.
+  assert.notEqual(displayedFileSizeLimit("owner", tool), 0);
+
+  // And the upgrade button is for the people who can still upgrade.
+  assert.equal(canUpgrade("free"), true);
+  for (const tier of ["pro", "max", "owner"]) {
+    assert.equal(canUpgrade(tier), false, `${tier} is still being sold an upgrade`);
+  }
+  return "50 / 100 / 200 MB and no limit at all; the upgrade button only for free";
+});
+
 /* ---------------- the approval queue ---------------- */
 
 /** A world with one customer, one admin, and the settings the queue prices from. */

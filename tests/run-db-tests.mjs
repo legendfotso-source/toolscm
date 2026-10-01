@@ -237,6 +237,88 @@ try {
       failed = true;
     }
   }
+  // No psql meta-commands in anything a human pastes into the Supabase SQL
+  // editor.
+  //
+  // `\set ON_ERROR_STOP on` is a psql instruction, not SQL. psql here eats it
+  // happily, so every check in this suite passed while the file Fortune was
+  // told to paste died on its first line with
+  // `syntax error at or near "\"`. The suite has to refuse what the editor
+  // refuses, not what psql tolerates.
+  {
+    const pasted = [PASTE_FILE, join(root, "supabase/MAKE-ME-SUPERADMIN.sql")];
+    const offenders = pasted.filter((file) =>
+      readFileSync(file, "utf8").split("\n").some((line) => line.trimStart().startsWith("\\")),
+    );
+    if (offenders.length === 0) {
+      console.log("\u001b[32mPASS  no psql-only command in anything meant to be pasted\u001b[0m");
+      standalone += 1;
+    } else {
+      console.log(
+        `\u001b[31mFAILED: ${offenders.join(", ")} contains a backslash command the ` +
+          "Supabase SQL editor cannot read\u001b[0m",
+      );
+      failed = true;
+    }
+  }
+
+  // MAKE-ME-SUPERADMIN.sql, run for real.
+  //
+  // It is the file that turns Fortune's account into the owner's, and it is
+  // the one piece of SQL here that a person runs when something is already
+  // wrong — so "it reported Success and did nothing" is the failure that
+  // costs the most. Both halves are checked: that it refuses loudly when the
+  // account does not exist, and that it sets both flags when it does.
+  {
+    run(`${psql} -c "create database superadmin_test"`, { quiet: true });
+    const into = `psql -h ${dir} -p ${PORT} -U postgres -v ON_ERROR_STOP=1 -q -d superadmin_test`;
+    run(`${into} -f ${dir}/bootstrap.sql`, { quiet: true });
+    for (const name of migrations) {
+      run(`${into} -f ${join(root, "supabase/migrations", name)}`, { quiet: true });
+    }
+    const script = join(root, "supabase/MAKE-ME-SUPERADMIN.sql");
+
+    let refused = false;
+    try {
+      run(`${into} -f ${script}`, { quiet: true });
+    } catch {
+      refused = true;
+    }
+    if (refused) {
+      console.log("\u001b[32mPASS  it refuses, loudly, when the account does not exist yet\u001b[0m");
+      standalone += 1;
+    } else {
+      console.log("\u001b[31mFAILED: it reported success on an account that is not there\u001b[0m");
+      failed = true;
+    }
+
+    // Now with the account — and with the address typed the way people
+    // actually type their own: wrong case, a stray space.
+    run(
+      `${into} -c "insert into auth.users (id, email) values ('11111111-1111-1111-1111-111111111111', ' LegendFotso@Gmail.com ')"`,
+      { quiet: true },
+    );
+    try {
+      run(`${into} -f ${script}`, { quiet: true });
+      run(`${into} -f ${script}`, { quiet: true });   // twice, as promised
+      const flags = run(
+        `${into} -tAc "select is_admin, is_unlimited from public.profiles where id = '11111111-1111-1111-1111-111111111111'"`,
+        { quiet: true },
+      ).trim();
+      if (flags === "t|t") {
+        console.log("\u001b[32mPASS  it makes that account an administrator with no limits\u001b[0m");
+        standalone += 1;
+      } else {
+        console.log(`\u001b[31mFAILED: the flags are ${flags || "(no row)"}, expected t|t\u001b[0m`);
+        failed = true;
+      }
+    } catch (error) {
+      console.log("\u001b[31mFAILED: MAKE-ME-SUPERADMIN.sql did not run\u001b[0m");
+      console.log(String(error.stdout ?? error.message).split("\n").slice(-6).join("\n"));
+      failed = true;
+    }
+  }
+
   console.log("");
 
   // The checks print their own PASS lines; a failure raises and psql exits

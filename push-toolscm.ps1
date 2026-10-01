@@ -5,13 +5,13 @@
 # checks below.
 #
 # It REFUSES rather than guesses. The copy of this repository on this PC is
-# expected to be at 3a27ced, the same commit GitHub has. If it is at anything
+# expected to be at 2e775b6, the same commit GitHub has. If it is at anything
 # else, somebody has worked in it since, and committing on top would quietly
 # bury that work. In that case the script stops and prints what it found.
 
 $root = 'C:\Users\ARTHUR\Downloads\toolscm_1\toolscm'
 $log = Join-Path $root 'push-log.txt'
-$expected = '3a27ced'
+$expected = '2e775b6'
 $remoteUrl = 'https://github.com/legendfotso-source/toolscm.git'
 
 Start-Transcript -Path $log -Force | Out-Null
@@ -72,37 +72,38 @@ try {
         Write-Output "Nothing to commit: this update is already committed here."
     } else {
         $message = @"
-Make every migration stand on its own, and ship the file to paste
+Tell people which plan they are on, and a one-paste way to become the owner
 
-Pasting 0003 into the live Supabase SQL editor died on line 39 with
-ERROR: 42704: type "public.plan_tier" does not exist, in a database the
-statements above the failure had already half-changed. 0002 had been written,
-tested and committed in September - and never run against production. The
-test suite had never noticed, because it applied the migrations in order, the
-way nobody applies them by hand through a web page.
+Fortune signed in on his own site and the upload box still said "PDF jusqu'a
+50,0 Mo". Three places where the interface never asked what plan the person is
+on, all the same bug, all pointing the same way - away from what somebody paid
+for:
 
-Three changes, in the order that matters:
+UploadZone printed tool.maxFileSize, the free figure, to everybody. A Max
+subscriber whose real ceiling is 200 MB was told 50, and nobody tries a 120 MB
+file when the page has just told them the limit is 50. It now shows
+displayedFileSizeLimit(tier, ...), and for the owner says there is no limit
+rather than printing MAX_SAFE_INTEGER bytes.
 
-0003 now creates plan_tier if it is absent, the same idempotent block 0002
-uses. It does NOT make 0002 unnecessary - 0002 also adds tier to
-subscriptions and payments, without which no customer can ever be on Max -
-and the comment says so.
+The header sold "Devenir Pro" to Pro subscribers, Max subscribers and the
+owner. Hidden by canUpgrade(tier), and hidden until the server has answered so
+it never flashes at them.
 
-test:db applies each migration ALONE, onto its own fresh database holding
-only 0001. A migration that works only when every earlier one was remembered
-is a migration that will one day be run without them. Breaking 0003's new
-prerequisite block makes exactly this check fail, and nothing else.
+useUsage is now one shared store rather than per-component state. The plan is
+needed in two places at once - the upload box and the header - and two
+components asking meant two GETs of the same endpoint on every page load.
+Built on useSyncExternalStore: one request between all subscribers, and the
+counter in the header can no longer disagree with the one on the page.
 
-supabase/PASTE-INTO-SUPABASE.sql is the concatenation, in order, built by
-npm run paste-file. One paste, one Run, no order to remember. test:db checks
-both that it still matches the migrations it was built from - a stray hand
-edit fails the run and names the command to fix it - and that it really
-applies to a database holding only 0001, twice.
+supabase/MAKE-ME-SUPERADMIN.sql sets is_admin and is_unlimited directly on the
+row, by email, case- and space-insensitively. The other two routes to those
+flags (ADMIN_EMAIL, OWNER_EMAILS) both run through Vercel and only act on the
+next deploy and the next sign-in; this one is a paste and a Run. It RAISES
+rather than warning when the account does not exist yet, because "Success" on
+a file that did nothing is how an hour gets spent looking somewhere else.
 
-Also: push-log.txt was committed by accident in 3a27ced. Removed and
-gitignored.
-
-53 database guarantees, up from 49. 230 checks in all.
+Proven: 233 checks, up from 230. 55 database guarantees. Six more mutations,
+all caught.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01Ptx4ZF647YBxv6EfVtEvew

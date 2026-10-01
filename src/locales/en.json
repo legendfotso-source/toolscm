@@ -91,7 +91,8 @@
     "moveDown": "Move down",
     "clearAll": "Remove all",
     "fileCount": "{count} file(s)",
-    "totalSize": "Total size"
+    "totalSize": "Total size",
+    "limitLineUnlimited": "{formats} — no size limit"
   },
   "processing": {
     "title": "Processing...",

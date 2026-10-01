@@ -4,16 +4,24 @@ import { useCallback, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import { acceptAttribute, formatBytes } from "@/lib/files";
 import type { ToolDefinition } from "@/types/tool";
+import { displayedFileSizeLimit, type TierId } from "@/lib/payments/tiers";
 import { buttonClass, cx } from "./ui";
 
 export function UploadZone({
   tool,
   onFiles,
   compact = false,
+  tier = "free",
 }: {
   tool: ToolDefinition;
   onFiles: (files: File[]) => void;
   compact?: boolean;
+  /**
+   * The plan the SERVER says this person is on. Free until it has answered —
+   * promising a bigger file and then refusing it is worse than being briefly
+   * modest.
+   */
+  tier?: TierId;
 }) {
   const { t, locale } = useLocale();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -28,6 +36,8 @@ export function UploadZone({
   );
 
   const openPicker = () => inputRef.current?.click();
+
+  const ceiling = displayedFileSizeLimit(tier, tool.maxFileSize);
 
   if (compact) {
     return (
@@ -117,11 +127,17 @@ export function UploadZone({
         {tool.multiple ? t("upload.chooseFiles") : t("upload.chooseFile")}
       </button>
 
+      {/* The ceiling THIS person has, not the tool's own figure.
+          It printed "PDF jusqu'à 50,0 Mo" to everybody, including a Max
+          subscriber whose real limit was 200 MB — and nobody tries a 120 MB
+          file when the page has just told them the limit is 50. */}
       <p className="mt-4 text-[12.5px] text-ink-soft">
-        {t("upload.limitLine", {
-          formats: tool.formatsLabel,
-          size: formatBytes(tool.maxFileSize, locale),
-        })}
+        {ceiling === null
+          ? t("upload.limitLineUnlimited", { formats: tool.formatsLabel })
+          : t("upload.limitLine", {
+              formats: tool.formatsLabel,
+              size: formatBytes(ceiling, locale),
+            })}
       </p>
     </div>
   );

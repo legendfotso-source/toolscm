@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
+import { useUsage } from "@/lib/usage/useUsage";
+import { canUpgrade } from "@/lib/payments/tiers";
 import { CATEGORY_ORDER } from "@/lib/tools/registry";
 import { Logo } from "./Logo";
 import { ToolSearch } from "./ToolSearch";
@@ -17,6 +19,10 @@ export function Header() {
   // Remember which page the sheet was opened on. Navigating anywhere makes it
   // closed by derivation — no effect, and no frame where the old menu sits
   // over the new page.
+  const { tier, known } = useUsage();
+  // Until the server has answered we do not know, and we do not guess: the
+  // button appears a moment later rather than appearing and being taken away.
+  const offerUpgrade = known && canUpgrade(tier);
   const [openedOn, setOpenedOn] = useState<string | null>(null);
   const menuOpen = openedOn === pathname;
   const setMenuOpen = (open: boolean) => setOpenedOn(open ? pathname : null);
@@ -62,9 +68,15 @@ export function Header() {
               <LanguageSwitcher />
             </div>
             <AccountMenu />
-            <ButtonLink href="/pricing" size="md" className="!min-h-10">
-              {t("nav.goPro")}
-            </ButtonLink>
+            {/* Not shown to somebody who has already bought it, and not to the
+                owner. An upgrade button on a Max subscriber's screen is an
+                advert pointed at the people who paid. Hidden until the server
+                has answered, so it never flashes at them. */}
+            {offerUpgrade ? (
+              <ButtonLink href="/pricing" size="md" className="!min-h-10">
+                {t("nav.goPro")}
+              </ButtonLink>
+            ) : null}
           </nav>
 
           <button
@@ -137,9 +149,11 @@ export function Header() {
 
             <div className="mt-2 flex items-center justify-between gap-3 border-t border-line pt-3">
               <LanguageSwitcher />
-              <ButtonLink href="/pricing" className="flex-1">
-                {t("nav.goPro")}
-              </ButtonLink>
+              {offerUpgrade ? (
+                <ButtonLink href="/pricing" className="flex-1">
+                  {t("nav.goPro")}
+                </ButtonLink>
+              ) : null}
             </div>
           </nav>
         </div>

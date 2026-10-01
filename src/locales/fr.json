@@ -91,7 +91,8 @@
     "moveDown": "Descendre",
     "clearAll": "Tout retirer",
     "fileCount": "{count} fichier(s)",
-    "totalSize": "Taille totale"
+    "totalSize": "Taille totale",
+    "limitLineUnlimited": "{formats} — aucune limite de taille"
   },
   "processing": {
     "title": "Traitement en cours...",

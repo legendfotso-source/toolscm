@@ -267,7 +267,7 @@ export function ToolWorkbench({
   return (
     <div className="space-y-4">
       {files.length === 0 ? (
-        <UploadZone tool={tool} onFiles={addFiles} />
+        <UploadZone tool={tool} onFiles={addFiles} tier={tier} />
       ) : (
         <>
           <FileList
@@ -276,7 +276,7 @@ export function ToolWorkbench({
             onMove={reorderable ? moveFile : undefined}
             reorderable={reorderable}
           />
-          {tool.multiple ? <UploadZone tool={tool} onFiles={addFiles} compact /> : null}
+          {tool.multiple ? <UploadZone tool={tool} onFiles={addFiles} compact tier={tier} /> : null}
         </>
       )}
 

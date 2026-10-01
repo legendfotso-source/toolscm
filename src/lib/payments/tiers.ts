@@ -181,6 +181,33 @@ export function tierAtLeast(have: TierId, need: TierId): boolean {
   return tierRank(have) >= tierRank(need);
 }
 
+/**
+ * The size ceiling to SHOW on the upload box, or null when there is none.
+ *
+ * Separate from `fileSizeLimit` because what is enforced and what is drawn had
+ * drifted apart, in the direction that costs a customer the thing they paid
+ * for: the upload box printed the tool's own figure — "PDF jusqu'à 50,0 Mo" —
+ * to everybody, including a Max subscriber whose real ceiling was 200 MB and
+ * the owner, who has none. Nobody tries a 120 MB file when the page has just
+ * told them the limit is 50.
+ *
+ * Reported by Fortune on 1 October 2026, signed in on his own site.
+ */
+export function displayedFileSizeLimit(tier: TierId, toolMaxBytes: number): number | null {
+  const limit = fileSizeLimit(tier, toolMaxBytes);
+  return limit >= NO_LIMIT ? null : limit;
+}
+
+/**
+ * Is there anything left to sell this person?
+ *
+ * The "Devenir Pro" button in the header was shown to everyone, which is an
+ * advert pointed at the people who have already paid — and at the owner.
+ */
+export function canUpgrade(tier: TierId): boolean {
+  return tier === "free";
+}
+
 /** How many files at a time, in words — because NO_LIMIT is not a number to show. */
 export function batchLabel(tier: TierId, fr: boolean): string {
   const files = TIERS[tier].batchFiles;
