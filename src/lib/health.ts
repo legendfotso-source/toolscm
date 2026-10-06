@@ -88,17 +88,51 @@ export async function runHealthChecks(): Promise<Check[]> {
     });
   } else {
     const { error } = await client.from("profiles").select("id").limit(1);
+
+    // Which role did this key actually arrive as?
+    //
+    // The question that ended a week of looking in the wrong place. The error
+    // above said "permission denied for table profiles", not "Invalid API
+    // key" — and those are two completely different faults whose fixes have
+    // nothing in common. Permission denied means the key WORKED: it was
+    // accepted, the project is right, the network is fine. What is wrong is
+    // the role it maps to, and no amount of re-copying the key changes a
+    // role. So the database is asked outright.
+    let role = "";
+    try {
+      const { data } = await client.rpc("whoami");
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row?.role_name) {
+        role = row.bypasses_rls
+          ? `connected as ${row.role_name} (bypasses RLS)`
+          : `connected as ${row.role_name} — this role does NOT bypass row level security`;
+      }
+    } catch {
+      /* 0006 not applied yet; the error message below still stands alone. */
+    }
+
+    const denied = (error?.message ?? "").toLowerCase().includes("permission denied");
     checks.push({
       name: "Database (service role)",
       state: error ? "fail" : "ok",
-      detail: error
-        ? `${error.message} — key is ${serviceShape}`
-        : `reachable, key is ${serviceShape}`,
-      fix: error
-        ? "If this says 'Invalid API key', the value is wrong rather than missing: " +
-          "re-copy it from Supabase → Settings → API Keys and paste it into Vercel " +
-          "with the field cleared first."
-        : undefined,
+      detail: [
+        error ? error.message : "reachable",
+        `key is ${serviceShape}`,
+        role,
+      ]
+        .filter(Boolean)
+        .join(" — "),
+      fix: !error
+        ? undefined
+        : denied
+          ? "The key is VALID — it was accepted and the connection worked. What it " +
+            "lacks is privileges, which means it is not the service-role key. " +
+            "Re-copying it will not help. In Supabase → Settings → API Keys, use the " +
+            "key whose role is service_role (the legacy 'service_role' JWT under " +
+            "Project API keys is always one), and paste THAT into Vercel."
+          : "If this says 'Invalid API key', the value is wrong rather than missing: " +
+            "re-copy it from Supabase → Settings → API Keys and paste it into Vercel " +
+            "with the field cleared first.",
     });
   }
 

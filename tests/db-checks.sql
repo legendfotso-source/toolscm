@@ -591,3 +591,51 @@ begin
 
   reset role;
 end $$;
+
+-- whoami() must run as the CALLER.
+--
+-- A security definer version would report the owner's role every time and
+-- answer the wrong question perfectly — the output would look entirely
+-- plausible, which is the worst way for a diagnostic to be wrong. The whole
+-- value of the function is that it names the role the KEY arrives as.
+do $$
+begin
+  if to_regclass('public.whoami'::text) is null then
+    perform test_assert(
+      exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+               where n.nspname = 'public' and p.proname = 'whoami'),
+      'whoami() exists so a key can be told apart from the role it arrives as'
+    );
+  end if;
+
+  perform test_assert(
+    not coalesce((
+      select p.prosecdef from pg_proc p
+        join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and p.proname = 'whoami'
+    ), true),
+    'whoami() runs as the caller, not as its owner'
+  );
+
+  perform test_assert(
+    has_function_privilege('anon', 'public.whoami()', 'EXECUTE')
+      and has_function_privilege('authenticated', 'public.whoami()', 'EXECUTE')
+      and has_function_privilege('service_role', 'public.whoami()', 'EXECUTE'),
+    'every role can ask which role it is'
+  );
+end $$;
+
+-- The audit log stays append-only even after 0006 grants the server the rest.
+do $$
+begin
+  if to_regclass('public.admin_audit_log') is null then return; end if;
+  perform test_assert(
+    not has_table_privilege('service_role', 'public.admin_audit_log', 'UPDATE')
+      and not has_table_privilege('service_role', 'public.admin_audit_log', 'DELETE'),
+    'not even the server can rewrite or erase an audit entry'
+  );
+  perform test_assert(
+    has_table_privilege('service_role', 'public.admin_audit_log', 'INSERT'),
+    'but the server can still add one'
+  );
+end $$;
