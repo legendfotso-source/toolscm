@@ -114,9 +114,13 @@ begin
 end $$;
 
 create schema if not exists auth;
+-- created_at is here because the real auth.users has it, and a stand-in
+-- that is missing a column passes queries the real database rejects. A file
+-- selecting it compiled fine here and died in the Supabase SQL editor.
 create table if not exists auth.users (
   id uuid primary key default gen_random_uuid(),
-  email text
+  email text,
+  created_at timestamptz not null default now()
 );
 
 -- Supabase's auth.uid() reads a JWT claim. A settable parameter stands in for
@@ -292,29 +296,69 @@ try {
       failed = true;
     }
 
-    // Now with the account — and with the address typed the way people
-    // actually type their own: wrong case, a stray space.
+    // Now the situation that actually happened, in full.
+    //
+    // TWO accounts for the same address — Supabase makes a second one when
+    // somebody has signed in once by email and once with Google — one of them
+    // with an empty profile email because the trigger's copy never arrived,
+    // and a THIRD with an auth.users row and no profile row at all.
+    //
+    // On 1 October 2026 the results grid said "administrateur: true" while
+    // /admin answered 404, because the script set the flag on one row with
+    // `limit 1` and Fortune's session was on the other. Every row has to be
+    // set, and the missing profile has to be created, or the file reports
+    // success for an account the person is not signed in as.
+    const ids = [
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222",
+      "33333333-3333-3333-3333-333333333333",
+    ];
     run(
-      `${into} -c "insert into auth.users (id, email) values ('11111111-1111-1111-1111-111111111111', ' LegendFotso@Gmail.com ')"`,
+      `${into} -c "insert into auth.users (id, email) values ` +
+        `('${ids[0]}', ' LegendFotso@Gmail.com '), ` +
+        `('${ids[1]}', 'legendfotso@gmail.com'), ` +
+        `('${ids[2]}', 'legendfotso@gmail.com')"`,
       { quiet: true },
     );
+    // The first profile loses its email; the third never gets a profile row.
+    run(`${into} -c "update public.profiles set email = '' where id = '${ids[0]}'"`, { quiet: true });
+    run(`${into} -c "delete from public.profiles where id = '${ids[2]}'"`, { quiet: true });
+
     try {
       run(`${into} -f ${script}`, { quiet: true });
       run(`${into} -f ${script}`, { quiet: true });   // twice, as promised
-      const flags = run(
-        `${into} -tAc "select is_admin, is_unlimited from public.profiles where id = '11111111-1111-1111-1111-111111111111'"`,
+
+      const rows = run(
+        `${into} -tAc "select id, email, is_admin, is_unlimited from public.profiles ` +
+          `where id in ('${ids.join("','")}') order by id"`,
         { quiet: true },
-      ).trim();
-      if (flags === "t|t") {
-        console.log("\u001b[32mPASS  it makes that account an administrator with no limits\u001b[0m");
+      ).trim().split("\n").filter(Boolean);
+
+      const allSet = rows.length === 3 && rows.every((row) => {
+        const [, email, admin, unlimited] = row.split("|");
+        // The address as the person typed it, minus the stray spaces: a
+        // trailing space is an address nobody will find by searching.
+        return (
+          admin === "t" &&
+          unlimited === "t" &&
+          email === email.trim() &&
+          email.toLowerCase() === "legendfotso@gmail.com"
+        );
+      });
+
+      if (allSet) {
+        console.log(
+          "\u001b[32mPASS  every account on that address is set, including one with no " +
+            "profile row and one with no email\u001b[0m",
+        );
         standalone += 1;
       } else {
-        console.log(`\u001b[31mFAILED: the flags are ${flags || "(no row)"}, expected t|t\u001b[0m`);
+        console.log(`\u001b[31mFAILED: ${rows.length} of 3 rows; got ${JSON.stringify(rows)}\u001b[0m`);
         failed = true;
       }
     } catch (error) {
       console.log("\u001b[31mFAILED: MAKE-ME-SUPERADMIN.sql did not run\u001b[0m");
-      console.log(String(error.stdout ?? error.message).split("\n").slice(-6).join("\n"));
+      console.log(String(error.stdout || error.stderr || error.message).split("\n").slice(-8).join("\n"));
       failed = true;
     }
   }

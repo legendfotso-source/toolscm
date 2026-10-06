@@ -4,14 +4,18 @@
 # from the conversation — including a refusal, which is the point of the
 # checks below.
 #
-# It REFUSES rather than guesses. The copy of this repository on this PC is
-# expected to be at 7ad2ef8, the same commit GitHub has. If it is at anything
-# else, somebody has worked in it since, and committing on top would quietly
-# bury that work. In that case the script stops and prints what it found.
+# It REFUSES rather than guesses — but it works out what to expect instead of
+# being told. It fetches origin/main and checks that this copy is sitting on
+# it. If this copy is BEHIND, somebody pushed from elsewhere and committing on
+# top would bury that work; if it is AHEAD, there is already a commit here to
+# push and nothing new to make.
+#
+# The expected commit used to be written into this file by hand, and every
+# successful push made it stale: the next run stopped on a number that was
+# only out of date. The repository already knows where it is. Ask it.
 
 $root = 'C:\Users\ARTHUR\Downloads\toolscm_1\toolscm'
 $log = Join-Path $root 'push-log.txt'
-$expected = '7ad2ef8'
 $remoteUrl = 'https://github.com/legendfotso-source/toolscm.git'
 
 Start-Transcript -Path $log -Force | Out-Null
@@ -37,13 +41,6 @@ try {
     git log --oneline -3
     Write-Output ""
 
-    $head = (git rev-parse --short HEAD).Trim()
-    if ($head -ne $expected) {
-        Write-Output "STOPPED - this copy is at $head, expected $expected."
-        Write-Output "Nothing was committed. Send this log back before doing anything else."
-        return
-    }
-
     # The remote. A clone made from a .zip has no remote at all, and `git push
     # origin main` would then fail on a name that does not exist — so it is
     # set here rather than assumed. Replaced, not added, so running this twice
@@ -52,6 +49,33 @@ try {
     git remote remove origin 2>$null | Out-Null
     git remote add origin $remoteUrl
     git remote -v
+    Write-Output ""
+
+    # Where GitHub is, asked rather than assumed.
+    Write-Output "=== comparing with GitHub ==="
+    git fetch origin 2>&1 | ForEach-Object { Write-Output $_ }
+    $head = (git rev-parse HEAD).Trim()
+    $remote = (git rev-parse origin/main 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $remote) {
+        Write-Output "STOPPED - could not read origin/main. Send this log back."
+        return
+    }
+    $remote = $remote.Trim()
+    Write-Output ("here:   " + $head.Substring(0, 7))
+    Write-Output ("GitHub: " + $remote.Substring(0, 7))
+
+    if ($head -ne $remote) {
+        # Behind is the dangerous one: committing on top of an older state
+        # buries whatever was pushed from elsewhere.
+        git merge-base --is-ancestor HEAD origin/main
+        if ($LASTEXITCODE -eq 0) {
+            Write-Output ""
+            Write-Output "STOPPED - this copy is BEHIND GitHub. Nothing was committed."
+            Write-Output "Run:  git pull --ff-only    then start this script again."
+            return
+        }
+        Write-Output "This copy is ahead of GitHub - there is already a commit here to push."
+    }
     Write-Output ""
 
     Write-Output "=== what changed ==="
@@ -72,28 +96,11 @@ try {
         Write-Output "Nothing to commit: this update is already committed here."
     } else {
         $message = @"
-Put a way in to /admin on the site
+Changes prepared in the Cowork session and verified against the test suite
 
-Fortune ran the SQL, reached /account, saw "Illimite" - and could not find the
-account list, because nothing on the site pointed at /admin. The screen had
-worked for days; the only way to reach it was to type the address.
-
-This has now happened twice on this site. /signin worked for weeks while
-nothing linked to it, and the honest report from outside was "there is no
-Google sign-in". A page nobody can navigate to does not exist, however well it
-works.
-
-getEntitlement now carries isAdmin, read from the SAME profile row as
-is_unlimited rather than a second query. It survives the pre-migration window:
-when is_unlimited does not exist yet, the fallback SELECT keeps asking for
-is_admin, so the order of the code deploy and the hand-run migration cannot
-decide who can reach /admin.
-
-The link is drawn on /account and in the account menu on every page. It is a
-signpost and nothing more: /admin and both of its endpoints still answer
-notFound() to anybody the server does not recognise.
-
-238 checks. Three more mutations, all caught.
+Pushed from Fortune's PC: the session's git proxy will not write to this
+repository, so the commit is made here and the work was byte-verified onto
+this machine before this script ran.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01Ptx4ZF647YBxv6EfVtEvew
