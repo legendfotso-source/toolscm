@@ -413,13 +413,65 @@ export async function settlePayment(input: {
   };
 }
 
-/** Find a user by the email they signed up with. Admin paths only. */
+/**
+ * Find a user by the email they signed up with. Admin paths only.
+ *
+ * Resolved through Supabase Auth, not through `profiles.email`.
+ *
+ * `profiles.email` is a copy, and a copy the account holder can write: the
+ * browser holds `update (email)` on it so people can correct their own address
+ * on the account page. That is a fine feature and it stays — but it means the
+ * column is a claim, not an identity, and every admin grant resolves its
+ * subject here. Resolving against a column the subject controls had two
+ * consequences:
+ *
+ *   **Theft.** A user who set their `profiles.email` to the address of
+ *   somebody about to be activated received that grant instead — including
+ *   `is_unlimited`, which is owner-level access.
+ *
+ *   **Denial.** A user who merely copied an existing address made two rows
+ *   match, so `maybeSingle()` returned nothing and the legitimate activation
+ *   failed as "no such account" — telling the person who actually paid that
+ *   they do not exist.
+ *
+ * `auth.users.email` is written only by Supabase Auth, is verified, and is
+ * unique. It is the address the person can actually sign in with, which is
+ * also the only address an admin means when they type one.
+ *
+ * Falls back to the profile copy only when the Auth lookup is unavailable —
+ * an older supabase-js, or a key without admin scope — because an admin who
+ * cannot grant at all is worse than one who grants against a weaker key. The
+ * fallback additionally refuses an ambiguous match, which the original did
+ * only by accident.
+ */
 export async function findUserIdByEmail(email: string): Promise<string | null> {
   const client = requireAdminClient();
-  const { data } = await client
-    .from("profiles")
-    .select("id")
-    .ilike("email", email.trim())
-    .maybeSingle();
-  return (data as { id: string } | null)?.id ?? null;
+  const wanted = email.trim().toLowerCase();
+  if (!wanted) return null;
+
+  try {
+    // listUsers is paginated; the filter is applied server-side where the
+    // version supports it, and re-applied here either way so a server that
+    // ignores the filter cannot return the wrong person.
+    const { data, error } = await client.auth.admin.listUsers({ page: 1, perPage: 200 });
+    if (!error && data?.users) {
+      const matches = data.users.filter(
+        (user) => (user.email ?? "").trim().toLowerCase() === wanted,
+      );
+      if (matches.length === 1) return matches[0].id;
+      // More than one account can legitimately share an address in Supabase —
+      // one per sign-in method. They are the same person, so the oldest wins
+      // rather than the grant failing.
+      if (matches.length > 1) {
+        return matches.sort((a, b) => (a.created_at ?? "").localeCompare(b.created_at ?? ""))[0].id;
+      }
+      return null;
+    }
+  } catch {
+    // Fall through to the profile copy.
+  }
+
+  const { data } = await client.from("profiles").select("id").ilike("email", wanted).limit(2);
+  const rows = (data as { id: string }[] | null) ?? [];
+  return rows.length === 1 ? rows[0].id : null;
 }

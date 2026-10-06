@@ -3,6 +3,7 @@ import "server-only";
 import { adminClient } from "./supabase/admin";
 import { tierOf, type TierId } from "./payments/tiers";
 import { currentUser } from "./supabase/server-client";
+import { isOwnerEmail, type Role } from "./auth/owner";
 
 /**
  * Is the caller an administrator?
@@ -13,11 +14,31 @@ import { currentUser } from "./supabase/server-client";
  * end of the migration: `update (email)`, and nothing else).
  */
 export async function isAdmin(): Promise<boolean> {
+  return (await currentRole()) !== "user";
+}
+
+/**
+ * The caller's role: owner, admin, or user.
+ *
+ * The owner check comes FIRST and reads no database, which is the whole point.
+ * Every branch below it needs the service-role client, so when that client is
+ * missing or its key is rejected the old code answered "not an admin" — and
+ * /admin returned the same 404 to the owner as to a stranger, with nothing
+ * anywhere saying why. The one person who could fix the fault was locked out
+ * by it.
+ *
+ * Owner is therefore decided from `OWNER_EMAILS` alone (see auth/owner.ts for
+ * why that is not a backdoor). Admin is still a database fact, because an
+ * admin is somebody the owner appoints and can un-appoint.
+ */
+export async function currentRole(): Promise<Role> {
   const user = await currentUser();
-  if (!user) return false;
+  if (!user) return "user";
+
+  if (isOwnerEmail(user.email)) return "owner";
 
   const client = adminClient();
-  if (!client) return false;
+  if (!client) return "user";
 
   const { data, error } = await client
     .from("profiles")
@@ -25,10 +46,21 @@ export async function isAdmin(): Promise<boolean> {
     .eq("id", user.id)
     .maybeSingle();
 
-  if (error || !data) return false;
-  if ((data as { is_admin: boolean }).is_admin === true) return true;
+  if (error || !data) return "user";
+  if ((data as { is_admin: boolean }).is_admin === true) return "admin";
 
-  return promoteFirstAdmin(user.id, user.email ?? "");
+  return (await promoteFirstAdmin(user.id, user.email ?? "")) ? "admin" : "user";
+}
+
+/**
+ * Is the caller the owner? For the handful of actions only he may take.
+ *
+ * Separate from `isAdmin()` so that adding a second administrator later does
+ * not hand them maintenance mode, platform settings, or the ability to change
+ * another administrator's role.
+ */
+export async function isOwner(): Promise<boolean> {
+  return (await currentRole()) === "owner";
 }
 
 /**

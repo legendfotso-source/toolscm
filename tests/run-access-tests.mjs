@@ -10,6 +10,7 @@
  * cookie, nobody to ask), into its own directory so the ordinary build is left
  * alone, and then checks what a signed-out visitor can and cannot do.
  */
+import net from "node:net";
 import { strict as assert } from "node:assert";
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -48,13 +49,23 @@ if (!process.env.SKIP_BUILD) {
 // A server already on this port would answer every check below with an OLD
 // build — which is how this test once passed against code it was meant to
 // catch. Refuse to run rather than test the wrong thing.
-let occupied = false;
-try {
-  await fetch(BASE, { signal: AbortSignal.timeout(1000) });
-  occupied = true;
-} catch {
-  /* nothing listening: good */
-}
+// Probed with a raw TCP connect, not with fetch.
+//
+// Node's fetch honours HTTP_PROXY/HTTPS_PROXY, and in a sandbox that sets one
+// the proxy answers for every address — so this check reported "occupied" for
+// every port, including ones nothing could possibly be on, and refused to run
+// at all. "Is something listening here" is a question about a socket, and a
+// socket is what should be asked.
+const occupied = await new Promise((resolve) => {
+  const probe = net.connect({ host: "127.0.0.1", port: PORT });
+  const settle = (answer) => {
+    probe.destroy();
+    resolve(answer);
+  };
+  probe.once("connect", () => settle(true));
+  probe.once("error", () => settle(false));
+  probe.setTimeout(1000, () => settle(false));
+});
 if (occupied) throw new Error(`something is already listening on ${BASE}; stop it and run again`);
 
 // Its own process group, so stopping it stops the real next-server too and

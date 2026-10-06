@@ -76,7 +76,31 @@ function loadCore() {
     readFileSync(join(root, "src", "lib", "entitlement.ts"), "utf8")
       .replace('from "./payments/tiers"', 'from "./tiers"')
       .replace('from "./supabase/admin"', 'from "@/lib/supabase/admin"')
-      .replace('from "./supabase/server-client"', 'from "@/lib/supabase/session"'),
+      .replace('from "./supabase/server-client"', 'from "@/lib/supabase/session"')
+      .replace('from "./auth/owner"', 'from "./owner"')
+      .replace('from "./accounts"', 'from "./accounts"'),
+  );
+
+  // accounts.ts holds account status and granted access — the two things that
+  // are true about a person independently of what they bought. entitlement.ts
+  // now consults it before evaluating any subscription, so the checks about a
+  // blocked account and about granted access run through this file.
+  writeFileSync(
+    join(src, "accounts.ts"),
+    readFileSync(join(root, "src", "lib", "accounts.ts"), "utf8")
+      .replace('import "server-only";', "")
+      .replace('from "./supabase/admin"', 'from "@/lib/supabase/admin"')
+      .replace('from "./payments/tiers"', 'from "./tiers"'),
+  );
+
+  // owner.ts decides who owns the platform, and entitlement.ts now asks it
+  // BEFORE touching a database — so the checks about OWNER_EMAILS run through
+  // this file rather than through a profile row. Copied whole: it reads only
+  // process.env, so there is nothing to shim.
+  writeFileSync(
+    join(src, "owner.ts"),
+    readFileSync(join(root, "src", "lib", "auth", "owner.ts"), "utf8")
+      .replace('import "server-only";', ""),
   );
 
   writeFileSync(
@@ -134,6 +158,8 @@ function loadCore() {
         "src/term.ts",
         "src/tiers.ts",
         "src/entitlement.ts",
+        "src/owner.ts",
+        "src/accounts.ts",
         "src/plans.ts",
         "src/receipt.ts",
         "src/settings.ts",
@@ -160,6 +186,8 @@ function loadCore() {
     "src/term.js",
     "src/tiers.js",
     "src/entitlement.js",
+    "src/owner.js",
+    "src/accounts.js",
     "src/plans.js",
     "src/receipt.js",
     "src/settings.js",
@@ -1162,6 +1190,146 @@ await check("the queue is oldest first, and only what is waiting", async () => {
   const done = await claims.listClaims("approved");
   assert.deepEqual(done.map((claim) => claim.id), ["c-done"]);
   return "whoever has waited longest is at the top";
+});
+
+
+// ---------------------------------------------------------------------------
+// Account status and granted access (0005)
+// ---------------------------------------------------------------------------
+
+/** A world with grants and a status column, as 0005 leaves it. */
+function grantWorld({ status = "active", grants = [], subscription = null } = {}) {
+  const tables = {
+    profiles: [
+      { id: "user-1", email: "client@example.com", is_admin: false, is_unlimited: false, status, deleted_at: null },
+    ],
+    entitlement_grants: grants.map((grant, index) => ({
+      id: `grant-${index}`,
+      user_id: "user-1",
+      tier: grant.tier,
+      kind: grant.kind ?? "admin",
+      reason: grant.reason ?? null,
+      starts_at: grant.startsAt ?? new Date(Date.now() - 86_400_000).toISOString(),
+      expires_at: grant.expiresAt ?? null,
+      granted_by: null,
+      revoked_at: grant.revokedAt ?? null,
+      created_at: new Date().toISOString(),
+    })),
+    subscriptions: subscription ? [{ user_id: "user-1", status: "active", ...subscription }] : [],
+  };
+  return createFakeClient(tables);
+}
+
+await check("a blocked account loses its access, whatever it paid for", async () => {
+  // The case that matters: somebody with a live, valid Max subscription who
+  // has been blocked. Evaluating the subscription first would answer "Max" for
+  // a person who may not use the site at all — and every gate in the
+  // application asks for an entitlement, so that answer would let them
+  // straight back in.
+  const far = new Date(Date.now() + 20 * 86_400_000).toISOString();
+  for (const status of ["blocked", "suspended"]) {
+    stub.setClient(grantWorld({ status, subscription: { end_date: far, tier: "max" } }));
+    session.setUser({ id: "user-1", email: "client@example.com" });
+    const seen = await entitlement.getEntitlement();
+    assert.equal(seen.tier, "free", `a ${status} account kept its tier`);
+    assert.equal(seen.isPro, false, `a ${status} account still read as paid`);
+    assert.equal(seen.status, status, "the reason is not reported");
+  }
+
+  // And an active account with the same subscription is unaffected, so the
+  // check above is testing the status and not something else.
+  stub.setClient(grantWorld({ status: "active", subscription: { end_date: far, tier: "max" } }));
+  session.setUser({ id: "user-1", email: "client@example.com" });
+  assert.equal((await entitlement.getEntitlement()).tier, "max");
+  return "blocked and suspended both drop to free; active is untouched";
+});
+
+await check("a granted tier counts, expires on its own, and can be revoked", async () => {
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString();
+  const tomorrow = new Date(Date.now() + 86_400_000).toISOString();
+
+  // Lifetime.
+  stub.setClient(grantWorld({ grants: [{ tier: "max" }] }));
+  session.setUser({ id: "user-1", email: "client@example.com" });
+  let seen = await entitlement.getEntitlement();
+  assert.equal(seen.tier, "max", "a live grant did not apply");
+  assert.equal(seen.source, "grant", "a grant was reported as a sale");
+  assert.equal(seen.proUntil, null, "a lifetime grant reported an end date");
+
+  // Temporary, still running.
+  stub.setClient(grantWorld({ grants: [{ tier: "pro", expiresAt: tomorrow }] }));
+  seen = await entitlement.getEntitlement();
+  assert.equal(seen.tier, "pro");
+  assert.equal(seen.proUntil, tomorrow, "the expiry is not shown to the customer");
+
+  // Expired — evaluated against the clock, not against a status column that
+  // nothing on this deployment would have updated.
+  stub.setClient(grantWorld({ grants: [{ tier: "max", expiresAt: yesterday }] }));
+  assert.equal((await entitlement.getEntitlement()).tier, "free", "an expired grant still applied");
+
+  // Revoked.
+  stub.setClient(grantWorld({ grants: [{ tier: "max", revokedAt: yesterday }] }));
+  assert.equal((await entitlement.getEntitlement()).tier, "free", "a revoked grant still applied");
+
+  // Not yet started.
+  stub.setClient(grantWorld({ grants: [{ tier: "max", startsAt: tomorrow }] }));
+  assert.equal((await entitlement.getEntitlement()).tier, "free", "a future grant applied early");
+  return "lifetime, temporary, expired, revoked and not-yet-started all behave";
+});
+
+await check("the stronger of a grant and a subscription wins, and says which", async () => {
+  // The priority the brief sets is OWNER, UNLIMITED, MAX, PRO, FREE — and the
+  // part that is easy to get wrong is that a grant must not TAKE AWAY what
+  // somebody bought. A promotional Pro handed to a paying Max customer would
+  // otherwise downgrade them, which is the worst possible direction for a
+  // mistake: they paid, and a gift cost them something.
+  const far = new Date(Date.now() + 20 * 86_400_000).toISOString();
+
+  stub.setClient(grantWorld({
+    grants: [{ tier: "pro", kind: "promotional" }],
+    subscription: { end_date: far, tier: "max" },
+  }));
+  session.setUser({ id: "user-1", email: "client@example.com" });
+  let seen = await entitlement.getEntitlement();
+  assert.equal(seen.tier, "max", "a weaker grant downgraded a paying customer");
+  assert.equal(seen.source, "subscription", "the paid plan was reported as a gift");
+  assert.equal(seen.proUntil, far, "the paid term was replaced by the grant's");
+
+  // And the other way: a granted Max over a bought Pro.
+  stub.setClient(grantWorld({
+    grants: [{ tier: "max" }],
+    subscription: { end_date: far, tier: "pro" },
+  }));
+  seen = await entitlement.getEntitlement();
+  assert.equal(seen.tier, "max", "the stronger grant did not apply");
+  assert.equal(seen.source, "grant");
+
+  // An unlimited grant reads as the uncapped tier, but it is a GRANT — not
+  // ownership of the platform, which comes from the environment alone.
+  stub.setClient(grantWorld({ grants: [{ tier: "unlimited" }] }));
+  seen = await entitlement.getEntitlement();
+  assert.equal(seen.tier, "owner", "an unlimited grant did not lift the caps");
+  assert.equal(seen.source, "grant", "a grant was reported as platform ownership");
+  return "stronger wins either way, and the source names which";
+});
+
+await check("missing 0005 tables leave everyone exactly as they were", async () => {
+  // The code deploy and the hand-run SQL land at different moments, in either
+  // order. A missing table has to mean "nobody has been granted anything yet"
+  // — never "every paying customer is now free", and never "every account is
+  // blocked", which is the direction a careless default would take it.
+  const far = new Date(Date.now() + 20 * 86_400_000).toISOString();
+  const client = createFakeClient({
+    profiles: [{ id: "user-1", email: "client@example.com", is_admin: false, is_unlimited: false }],
+    subscriptions: [{ user_id: "user-1", status: "active", end_date: far, tier: "max" }],
+  });
+  // No entitlement_grants table at all, and no status column on profiles.
+  stub.setClient(client);
+  session.setUser({ id: "user-1", email: "client@example.com" });
+  const seen = await entitlement.getEntitlement();
+  assert.equal(seen.tier, "max", "a customer lost their plan to a missing table");
+  assert.equal(seen.status, "active", "a missing status column locked an account out");
+  return "a pre-migration database keeps every customer on the plan they bought";
 });
 
 console.log("");

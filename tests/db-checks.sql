@@ -447,16 +447,32 @@ begin
   );
 end $$;
 
--- A claim grants nothing, so the browser may create one. It may not decide
--- one: `status` has no UPDATE grant, and neither has anything else on the row.
+-- The browser may READ the queue and nothing else.
+--
+-- It used to be able to insert, on the reasoning that a claim grants nothing
+-- by itself. That reasoning was wrong, and 0004 withdrew the grant. What it
+-- missed is that the claim carries `tier`, `days` and `amount` — the three
+-- numbers that decide what approval hands out — and the column CHECKs allow
+-- `days` up to 3650. So a signed-in user could skip the application, POST to
+-- the Data API with the public anon key, and leave a claim reading
+-- "max, 3650 days, 2000 FCFA" in the queue, indistinguishable from a real
+-- 2,000 FCFA transfer. Approving it granted ten years of Max.
+--
+-- Claims are now created only by /api/payments/claim, which prices them from
+-- the server's own settings. The approval path reprices as well, so neither
+-- guard alone is load-bearing — but this is the one that stops the row from
+-- existing at all.
 do $$
 begin
-  -- Column-level, deliberately: the grant names the columns a customer may
-  -- write and no others, so table-level INSERT is false here and SHOULD be.
   perform test_assert(
-    has_column_privilege('authenticated', 'public.payment_claims', 'transaction_id', 'INSERT')
-      and has_column_privilege('authenticated', 'public.payment_claims', 'tier', 'INSERT'),
-    'a signed-in customer can declare a payment'
+    not has_column_privilege('authenticated', 'public.payment_claims', 'tier', 'INSERT')
+      and not has_column_privilege('authenticated', 'public.payment_claims', 'days', 'INSERT')
+      and not has_column_privilege('authenticated', 'public.payment_claims', 'amount', 'INSERT'),
+    'a customer cannot write their own price, tier or term into the queue'
+  );
+  perform test_assert(
+    not has_table_privilege('authenticated', 'public.payment_claims', 'INSERT'),
+    'and cannot insert a claim at all except through the route'
   );
   perform test_assert(
     has_table_privilege('authenticated', 'public.payment_claims', 'SELECT'),

@@ -1,7 +1,16 @@
 import "server-only";
 
-import { tierOf, type TierId } from "./payments/tiers";
+import { tierOf, tierRank, type TierId } from "./payments/tiers";
 import { adminClient } from "./supabase/admin";
+import { isOwnerEmail } from "./auth/owner";
+import {
+  accountStatus,
+  bestGrantTier,
+  grantExpiry,
+  liveGrants,
+  statusAllowsUse,
+  type AccountStatus,
+} from "./accounts";
 import { currentUser } from "./supabase/server-client";
 
 export type Entitlement = {
@@ -23,6 +32,22 @@ export type Entitlement = {
    * one row, on every page, to answer two questions about it.
    */
   isAdmin: boolean;
+  /**
+   * The account's own state, independent of what it bought.
+   *
+   * Carried on the entitlement because every gate in the application already
+   * asks for an entitlement, and "may this person act" is the same question
+   * as "what may they do" one step earlier. A blocked account that still had
+   * a valid subscription would otherwise keep working, which is the one thing
+   * blocking has to prevent.
+   */
+  status: AccountStatus;
+  /**
+   * How they got this tier. The brief asks that a manual grant never looks
+   * like a sale, and this is the field that keeps them apart in the UI and in
+   * the figures.
+   */
+  source: "none" | "owner" | "grant" | "subscription";
 };
 
 const FREE: Entitlement = {
@@ -31,6 +56,8 @@ const FREE: Entitlement = {
   userId: null,
   proUntil: null,
   isAdmin: false,
+  status: "active",
+  source: "none",
 };
 
 /** PostgreSQL's code for "that column does not exist". */
@@ -84,30 +111,103 @@ async function activeSubscription(
  * any request this function reads, so there is nothing for a user to edit in
  * dev tools.
  */
+/**
+ * Record, if we can, that the owner has unlimited access.
+ *
+ * Unconditional rather than "only when it differs": skipping the write when
+ * the flag already matches would need a read first, so the saving is one
+ * round trip traded for another, on one row, for one person.
+ *
+ * Best effort and nothing more. Returns no value, throws nothing, and is never
+ * consulted: a failure here means the profile row disagrees with the
+ * environment for a while, which costs a wrong figure on the members table and
+ * nothing else.
+ */
+async function markOwnerUnlimited(userId: string): Promise<void> {
+  const client = adminClient();
+  if (!client) return;
+  const { error } = await client
+    .from("profiles")
+    .update({ is_unlimited: true, is_admin: true })
+    .eq("id", userId);
+  if (error && error.code !== UNDEFINED_COLUMN) {
+    console.warn("[Tools.cm] could not mark the owner unlimited:", error.message);
+  }
+}
+
 export async function getEntitlement(): Promise<Entitlement> {
   const user = await currentUser();
   if (!user) return FREE;
 
+  // The owner, decided from the environment, before anything that needs a
+  // database. Above the `client` check on purpose: when the service-role key
+  // is missing or rejected, every signed-in account used to drop to free —
+  // including Fortune's — so the one person who could diagnose it saw the same
+  // capped, admin-less site as a stranger. The owner is a deployment fact, not
+  // a row, and a database he cannot reach must not be able to demote him.
+  if (isOwnerEmail(user.email)) {
+    // The answer is already decided. The write below only keeps the profile
+    // row agreeing with it, so the admin members table shows the owner as
+    // unlimited like everybody else — it is a display detail, awaited so it
+    // cannot become a floating promise in a serverless function, and its
+    // failure is ignored on purpose. The entitlement does not depend on it;
+    // that is the whole point of answering before the database is consulted.
+    await markOwnerUnlimited(user.id);
+    return {
+      tier: "owner",
+      isPro: true,
+      userId: user.id,
+      proUntil: null,
+      isAdmin: true,
+      // The owner's own account is never suspended by this path. The database
+      // trigger in 0005 refuses it too, so the two agree.
+      status: "active",
+      source: "owner",
+    };
+  }
+
   const client = adminClient();
   if (!client) return { ...FREE, userId: user.id };
 
-  // The owner's own account comes first, and short-circuits everything below.
-  // It is not a subscription — there is no end date to check and no payment
-  // to have expired — so asking about subscriptions at all would only be a
-  // way to get the answer wrong.
+  // The account's own state, before anything about what it bought.
+  //
+  // A blocked account with a valid subscription is still blocked — that is the
+  // whole meaning of blocking, and evaluating the subscription first would
+  // produce an entitlement that says "Max" for somebody who may not use the
+  // site at all. Returned as free with the real status attached, so a caller
+  // can both refuse the action and say why.
+  const status = await accountStatus(user.id);
+  if (!statusAllowsUse(status)) {
+    return { ...FREE, userId: user.id, status };
+  }
+
   const flags = await profileFlags(client, user.id, user.email ?? "");
   if (flags.isUnlimited) {
-    return { tier: "owner", isPro: true, userId: user.id, proUntil: null, isAdmin: flags.isAdmin };
+    return {
+      tier: "owner",
+      isPro: true,
+      userId: user.id,
+      proUntil: null,
+      isAdmin: flags.isAdmin,
+      status,
+      source: "grant",
+    };
   }
+
+  // Granted access, next. Above the subscription on purpose: the priority the
+  // brief sets is OWNER, UNLIMITED, MAX, PRO, FREE, and a grant is how
+  // somebody gets Max without a payment. A grant that is weaker than what the
+  // person actually bought does not take anything away — `bestOf` below keeps
+  // whichever is stronger.
+  const grants = await liveGrants(user.id);
+  const grantedTier = bestGrantTier(grants);
 
   // Evaluate expiry at read time rather than trusting a status column that a
   // cron job may not have updated yet.
   const row = await activeSubscription(client, user.id);
-  if (!row) return { ...FREE, userId: user.id, isAdmin: flags.isAdmin };
+  const subscriptionValid = row ? !row.end_date || new Date(row.end_date) > new Date() : false;
 
-  const stillValid = !row.end_date || new Date(row.end_date) > new Date();
-
-  if (!stillValid) {
+  if (row && !subscriptionValid) {
     // Lazily record the expiry so the admin figures stay honest.
     await client
       .from("subscriptions")
@@ -115,14 +215,33 @@ export async function getEntitlement(): Promise<Entitlement> {
       .eq("user_id", user.id)
       .eq("status", "active")
       .lte("end_date", new Date().toISOString());
-    return { ...FREE, userId: user.id, isAdmin: flags.isAdmin };
   }
 
   // A paid row with no tier recorded is Pro: every subscription sold before
   // Max existed was a Pro subscription, and reading those as free would take
   // away something people paid for.
-  const tier = tierOf(row.tier ?? "pro");
-  return { tier, isPro: true, userId: user.id, proUntil: row.end_date, isAdmin: flags.isAdmin };
+  const paidTier: TierId | null = row && subscriptionValid ? tierOf(row.tier ?? "pro") : null;
+
+  if (!grantedTier && !paidTier) {
+    return { ...FREE, userId: user.id, isAdmin: flags.isAdmin, status };
+  }
+
+  // Whichever is stronger wins, and the source follows the winner — so a
+  // customer who also happens to hold a promotional grant is reported by
+  // whichever actually decides what they can do.
+  const grantWins =
+    !!grantedTier && (!paidTier || tierRank(grantedTier) >= tierRank(paidTier));
+  const tier = (grantWins ? grantedTier : paidTier) as TierId;
+
+  return {
+    tier,
+    isPro: true,
+    userId: user.id,
+    proUntil: grantWins ? grantExpiry(grants) : (row?.end_date ?? null),
+    isAdmin: flags.isAdmin,
+    status,
+    source: grantWins ? "grant" : "subscription",
+  };
 }
 
 

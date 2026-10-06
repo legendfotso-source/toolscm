@@ -65,6 +65,54 @@ class Query {
     return this;
   }
 
+  is(column, value) {
+    // PostgREST's `.is("col", null)` means IS NULL. The fake stores a missing
+    // column as undefined and an explicit null as null; both are "not set",
+    // and a filter that told them apart would make a test pass or fail on
+    // whether a fixture bothered to spell out a null.
+    this.filters.push((row) =>
+      value === null ? row[column] === null || row[column] === undefined : row[column] === value,
+    );
+    return this;
+  }
+
+  gt(column, value) {
+    this.filters.push((row) => row[column] !== null && row[column] !== undefined && row[column] > value);
+    return this;
+  }
+
+  /**
+   * PostgREST's `.or("a.is.null,b.gt.x")` — the handful of forms this codebase
+   * actually uses, and nothing more.
+   *
+   * Deliberately NOT a general parser. A fake that accepts syntax the real
+   * client would reject is a fake that lets a broken query pass the tests, so
+   * anything unrecognised throws here rather than quietly matching nothing.
+   */
+  or(expression) {
+    const clauses = String(expression)
+      .split(",")
+      .map((clause) => clause.trim())
+      .filter(Boolean)
+      .map((clause) => {
+        const [column, operator, ...rest] = clause.split(".");
+        const value = rest.join(".");
+        if (operator === "is" && value === "null") {
+          return (row) => row[column] === null || row[column] === undefined;
+        }
+        if (operator === "gt") {
+          return (row) => row[column] !== null && row[column] !== undefined && row[column] > value;
+        }
+        if (operator === "lt") {
+          return (row) => row[column] !== null && row[column] !== undefined && row[column] < value;
+        }
+        if (operator === "eq") return (row) => String(row[column]) === value;
+        throw new Error(`fake-supabase: unsupported .or() clause "${clause}"`);
+      });
+    this.filters.push((row) => clauses.some((match) => match(row)));
+    return this;
+  }
+
   not(column, operator, value) {
     if (operator === "is" && value === null) {
       this.filters.push((row) => row[column] !== null && row[column] !== undefined);

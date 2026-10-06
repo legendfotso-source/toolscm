@@ -202,6 +202,31 @@ export type DecisionResult =
  * succeeded. The other order would close the queue item and leave the
  * customer with nothing, which is the one failure they cannot see or report.
  */
+/** The plan lengths that exist. Nothing else is a plan. */
+const PLAN_IDS: PlanId[] = ["monthly", "quarterly", "yearly"];
+
+/**
+ * Which plan this claim is for, read back from its length — and only from a
+ * length that a real plan actually has.
+ *
+ * The row's `days` cannot simply be used, because that is the number an
+ * attacker chose. But it cannot simply be ignored either: a customer who paid
+ * for a year has a legitimate claim for 360 days, and repricing every claim as
+ * monthly would quietly sell them a month. The resolution is to treat `days`
+ * as a CHOICE AMONG THE PLANS rather than as a quantity — 30, 90 or 360 names
+ * a plan; 3650 names nothing, and anything that names nothing is monthly, the
+ * smallest thing it could have been.
+ */
+function planFromDays(
+  settings: Parameters<typeof planForTier>[0],
+  claim: { tier: string; days: number },
+): PlanId {
+  for (const id of PLAN_IDS) {
+    if (planForTier(settings, claim.tier as PaidTier, id).days === claim.days) return id;
+  }
+  return "monthly";
+}
+
 export async function approveClaim(
   claimId: string,
   adminUserId: string,
@@ -213,15 +238,36 @@ export async function approveClaim(
   if (found.error || !claim) return { ok: false, reason: "not_found" };
   if (claim.status !== "pending") return { ok: false, reason: "not_pending" };
 
+  // Reprice from the tier, here, at approval. NOT from the row.
+  //
+  // `createClaim` computes `days` and `amount` on the server and never accepts
+  // them from the browser — but it is not the only way a row gets into this
+  // table. `authenticated` held a direct INSERT grant on these very columns,
+  // so a signed-in user could skip this application entirely, POST straight to
+  // the Data API with the anon key, and insert
+  //   { tier: 'max', days: 3650, amount: 2000 }
+  // — values the column CHECKs allow, since `days between 1 and 3650`. The
+  // claim would then sit in the queue looking exactly like a real 2,000 FCFA
+  // Mobile Money transfer, and approving it granted ten years of Max.
+  //
+  // The grant that made that possible is revoked in migration 0004, but the
+  // revocation is a hand-run SQL file and this code must not depend on it
+  // having been run — that is precisely the ordering mistake that broke this
+  // deployment once already. So the entitlement is derived from the tier and
+  // the server's own settings on the way out, and the row is treated as a
+  // request rather than as a fact.
+  const settings = await getSettings();
+  const priced = planForTier(settings, claim.tier as PaidTier, planFromDays(settings, claim));
+
   let result;
   try {
     result = await grantPro({
       userId: claim.user_id,
       provider: "manual",
       transactionId: claim.transaction_id,
-      amount: claim.amount,
-      currency: claim.currency,
-      days: claim.days,
+      amount: priced.amountXaf,
+      currency: "XAF",
+      days: priced.days,
       tier: claim.tier as PaidTier,
       raw: {
         enteredBy: "admin",
@@ -230,6 +276,11 @@ export async function approveClaim(
         phone: claim.phone,
         note: decisionNote ?? null,
         at: new Date().toISOString(),
+        // Kept for reconciliation, and because a mismatch is worth seeing:
+        // it means the row did not come from createClaim.
+        claimedAmount: claim.amount,
+        claimedDays: claim.days,
+        repriced: claim.amount !== priced.amountXaf || claim.days !== priced.days,
       },
     });
   } catch (error) {
