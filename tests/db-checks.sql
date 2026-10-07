@@ -639,3 +639,64 @@ begin
     'but the server can still add one'
   );
 end $$;
+
+-- 0008: the scheduled run's two tables must be invisible to the browser.
+--
+-- cron_runs is the more interesting of the two. A browser that could write it
+-- could make a job that has stopped look like one that is running — which is
+-- the single most misleading thing this table could be made to say, on the
+-- one panel whose job is to notice things that have stopped.
+do $$
+begin
+  if to_regclass('public.cron_runs') is null then return; end if;
+
+  perform test_assert(
+    (select relrowsecurity from pg_class where oid = 'public.cron_runs'::regclass),
+    'cron_runs has row level security on'
+  );
+
+  perform test_assert(
+    not has_table_privilege('anon', 'public.cron_runs', 'SELECT')
+      and not has_table_privilege('authenticated', 'public.cron_runs', 'SELECT')
+      and not has_table_privilege('anon', 'public.cron_runs', 'UPDATE')
+      and not has_table_privilege('authenticated', 'public.cron_runs', 'UPDATE'),
+    'no browser can read or rewrite when the scheduled job last ran'
+  );
+
+  perform test_assert(
+    has_table_privilege('service_role', 'public.cron_runs', 'SELECT')
+      and has_table_privilege('service_role', 'public.cron_runs', 'INSERT')
+      and has_table_privilege('service_role', 'public.cron_runs', 'UPDATE'),
+    'but the server can record and read it'
+  );
+end $$;
+
+-- reminded_for records WHICH expiry was announced, not that one was.
+--
+-- The difference is the whole design: a boolean would have to be cleared when
+-- the customer renews, and the renewal path would have to remember to clear
+-- it. A timestamptz compared against end_date resets itself.
+do $$
+declare
+  kind text;
+begin
+  if to_regclass('public.subscriptions') is null then return; end if;
+
+  select data_type into kind
+    from information_schema.columns
+   where table_schema = 'public' and table_name = 'subscriptions'
+     and column_name = 'reminded_for';
+
+  perform test_assert(
+    kind = 'timestamp with time zone',
+    'reminded_for stores the expiry it was sent for, not a flag (got: ' ||
+      coalesce(kind, 'no such column') || ')'
+  );
+
+  perform test_assert(
+    (select is_nullable from information_schema.columns
+      where table_schema = 'public' and table_name = 'subscriptions'
+        and column_name = 'reminded_for') = 'YES',
+    'every subscription that existed before 0008 is eligible for a reminder'
+  );
+end $$;

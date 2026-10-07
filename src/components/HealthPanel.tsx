@@ -1,6 +1,7 @@
 import type { Check, Health } from "@/lib/health";
 import type { Role } from "@/lib/auth/owner";
 import { Card, SectionHeading } from "./ui";
+import { RunScheduledNow } from "./admin/RunScheduledNow";
 
 /**
  * The health checks, drawn in the site's own card style.
@@ -60,6 +61,9 @@ export function HealthPanel({ checks, role }: { checks: Check[]; role: Role }) {
           </li>
         ))}
       </ul>
+      {/* Only the owner. An administrator can read this panel; triggering a
+          run sends mail to customers, which is the owner's decision. */}
+      {role === "owner" ? <RunScheduledNow /> : null}
       <p className="mt-4 text-[11px] text-muted-foreground">
         Aucune clé n&apos;est affichée ici : seulement sa longueur et son préfixe, de quoi
         distinguer « absente » de « présente mais fausse ».

@@ -17,7 +17,7 @@
  */
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -578,6 +578,78 @@ await check("the Stripe return verifies, and a missed webhook is survivable", as
     "refusal is decided inline rather than by a named, auditable list",
   );
   return "the id is stored, the return verifies, and the session must match";
+});
+
+await check("the daily job is actually scheduled, and the code it calls exists", async () => {
+  // Phase 5 wrote expireStalePayments() and never called it. The function was
+  // correct, tested, and did nothing, which is the quietest possible way to
+  // ship nothing — so this check is about the WIRING, not the logic.
+  const config = JSON.parse(readFileSync(join(root, "vercel.json"), "utf8"));
+  const crons = config.crons ?? [];
+  assert.equal(crons.length, 1, `${crons.length} cron entries, expected 1`);
+
+  const [cron] = crons;
+  const route = join(root, "src", "app", cron.path.replace(/^\//, ""), "route.ts");
+  // A schedule pointing at a path that does not exist is a schedule that runs
+  // a 404 every morning, for ever, silently.
+  assert.ok(existsSync(route), `${cron.path} is scheduled but ${route} does not exist`);
+
+  // Five fields, and not more often than daily: the platform's free tier
+  // allows one run a day, and a schedule it refuses is a schedule that never
+  // runs at all.
+  const fields = String(cron.schedule).trim().split(/\s+/);
+  assert.equal(fields.length, 5, `"${cron.schedule}" is not a 5-field cron expression`);
+  assert.ok(!fields[0].includes("*"), `"${cron.schedule}" runs every minute of the hour`);
+  assert.ok(!fields[1].includes("*"), `"${cron.schedule}" runs every hour`);
+
+  // And the work itself must be reachable from the route.
+  // Import lines are stripped first. Searching the whole file for the NAME
+  // passes on a file that imports a function and never calls it, which is the
+  // exact defect this check exists to catch — the first version of it did
+  // precisely that, and a mutation walked straight through.
+  const scheduled = readFileSync(join(root, "src", "lib", "scheduled.ts"), "utf8")
+    .split("\n")
+    .filter((line) => !/^\s*import\b/.test(line))
+    .join("\n");
+  for (const called of ["expireStalePayments", "sweepOldHits", "reminderMessage"]) {
+    assert.ok(new RegExp(`\\b${called}\\s*\\(`).test(scheduled), `${called} is never called`);
+  }
+  return `${cron.schedule} → ${cron.path}`;
+});
+
+await check("with no CRON_SECRET set, nobody may run the scheduled job", async () => {
+  // The failure that would matter: an endpoint which sends mail to customers
+  // and writes to the database, left open because nobody had configured a
+  // secret yet. "Not configured" must mean shut, never mean open.
+  const guard = await import(
+    `${compile(join("src", "lib", "cron-auth.ts"), "cron-auth.js")}?v=guard`
+  );
+  const { bearerMatches } = guard;
+
+  const SECRET = "a-long-random-cron-secret-value";
+
+  for (const empty of ["", "   ", undefined, null]) {
+    assert.equal(
+      bearerMatches(`Bearer ${SECRET}`, empty),
+      false,
+      `an unset secret let a request through (${JSON.stringify(empty)})`,
+    );
+  }
+  // Not even an empty bearer against an empty secret.
+  assert.equal(bearerMatches("Bearer ", ""), false);
+  assert.equal(bearerMatches("Bearer", ""), false);
+
+  // And with a secret set, only the exact value passes.
+  assert.equal(bearerMatches(`Bearer ${SECRET}`, SECRET), true, "the real secret was refused");
+  assert.equal(bearerMatches(`bearer ${SECRET}`, SECRET), false, "the scheme is case-sensitive");
+  assert.equal(bearerMatches(SECRET, SECRET), false, "the scheme is not required");
+  assert.equal(bearerMatches(`Bearer ${SECRET}x`, SECRET), false, "a longer token passed");
+  assert.equal(bearerMatches(`Bearer ${SECRET.slice(0, -1)}`, SECRET), false, "a prefix passed");
+  assert.equal(
+    bearerMatches(`Bearer ${SECRET.slice(0, -1)}X`, SECRET), false,
+    "a same-length near miss passed — the comparison stops early",
+  );
+  return "unset means shut; set means exact";
 });
 
 console.log("");

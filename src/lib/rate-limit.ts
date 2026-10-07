@@ -82,8 +82,10 @@ export async function hit(limit: Limit): Promise<Verdict> {
  * costs money for nothing. One in roughly fifty calls does the sweep, so the
  * cost is amortised and no single request pays for it.
  */
-export async function sweepOldHits(): Promise<void> {
-  if (Math.random() > 0.02) return;
+export async function sweepOldHits(probability = 0.02): Promise<void> {
+  // The scheduled run passes 1: once a day there is a moment when this can be
+  // done deliberately, and no visitor's request has to pay for it.
+  if (probability < 1 && Math.random() > probability) return;
   const client = adminClient();
   if (!client) return;
   const cutoff = new Date(Date.now() - 86_400_000).toISOString();

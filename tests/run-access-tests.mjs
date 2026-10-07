@@ -27,6 +27,10 @@ const env = {
   NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:9",
   NEXT_PUBLIC_SUPABASE_ANON_KEY: "sb_publishable_access_test",
   NODE_ENV: "production",
+  // The scheduled run's shared secret. Set here so the test can prove that a
+  // WRONG one is refused — with it unset, every request is refused for the
+  // wrong reason and the check would pass without testing anything.
+  CRON_SECRET: "access-test-cron-secret-0123456789",
 };
 
 const results = [];
@@ -252,6 +256,32 @@ try {
     assert.equal(handled.status, 404, `marking a message answered ${handled.status}`);
 
     return "the detail page, the search, the inbox and all six actions: 404";
+  });
+
+  await check("the scheduled run cannot be triggered by a stranger", async () => {
+    // This endpoint sends mail to customers and writes to the database. It is
+    // the only route in the project a machine is meant to call, which makes it
+    // the only one whose caller cannot be a session — so it is a shared
+    // secret, and the test has to prove the secret is actually compared.
+    const tries = [
+      ["no header at all", {}],
+      ["an empty bearer", { Authorization: "Bearer " }],
+      ["the wrong secret", { Authorization: "Bearer not-the-secret" }],
+      // Same length as the real one, differing in the last character: this is
+      // what catches a comparison that only looks at a prefix or at length.
+      ["a near miss", { Authorization: "Bearer access-test-cron-secret-012345678X" }],
+      ["the secret without the scheme", { Authorization: "access-test-cron-secret-0123456789" }],
+    ];
+
+    for (const [what, headers] of tries) {
+      for (const method of ["GET", "POST"]) {
+        const answer = await fetch(`${BASE}/api/cron/daily`, { method, headers });
+        // 404 rather than 401, like every other guarded path here: a stranger
+        // does not even learn that a scheduled job exists.
+        assert.equal(answer.status, 404, `${method} with ${what} answered ${answer.status}`);
+      }
+    }
+    return `${tries.length} bad credentials x2 methods: 404 every time`;
   });
 
   await check("nobody can declare a payment without an account", async () => {

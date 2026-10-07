@@ -5,6 +5,7 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./supabase/config";
 import { ownerEmails } from "./auth/owner";
 import { contactRecipient } from "./email/mailer";
 import { campayDiagnosis } from "./payments/providers/campay";
+import { lastScheduledRun } from "./scheduled";
 
 /**
  * What is actually working, named plainly.
@@ -218,6 +219,44 @@ export async function runHealthChecks(): Promise<Check[]> {
             ? "This is the demo host. Set CAMPAY_ENVIRONMENT=PROD, with live credentials, " +
               "when you are ready to take real payments."
             : undefined,
+  });
+
+  // The scheduled run. A job that silently stops is indistinguishable from a
+  // quiet month — which is precisely the class of fault this panel exists to
+  // end, and the reason the run records itself rather than only logging.
+  const cronSecret = (process.env.CRON_SECRET ?? "").trim();
+  const lastRun = await lastScheduledRun();
+  const hoursAgo = lastRun
+    ? Math.floor((Date.now() - new Date(lastRun.ranAt).getTime()) / 3_600_000)
+    : null;
+  checks.push({
+    name: "Travail planifié (rappels)",
+    state: !cronSecret
+      ? "warn"
+      : hoursAgo === null
+        ? "warn"
+        : // 36 hours, not 24: the platform's schedules are approximate, and a
+          // panel that goes red because a daily job ran at 07:05 instead of
+          // 06:55 is a panel nobody reads twice.
+          hoursAgo > 36 || !lastRun?.ok
+          ? "fail"
+          : "ok",
+    detail: !cronSecret
+      ? "CRON_SECRET is not set — the scheduled run refuses every request, including the platform's"
+      : lastRun === null
+        ? "never run, or 0008 has not been pasted yet"
+        : `${hoursAgo}h ago · ${lastRun.detail ?? "no detail recorded"}`,
+    fix: !cronSecret
+      ? "Set CRON_SECRET in Vercel to any long random string, as a Secret, then redeploy. " +
+        "Without it nothing sends renewal reminders and abandoned checkouts stay pending " +
+        "for ever — and the endpoint stays shut rather than open, which is the safe half " +
+        "of the failure."
+      : lastRun === null
+        ? "Paste supabase/PASTE-INTO-SUPABASE.sql (it contains 0008), then use the button " +
+          "below to run it now rather than waiting for tomorrow."
+        : hoursAgo !== null && hoursAgo > 36
+          ? "The daily job has not run. Check Vercel → the project → Cron Jobs."
+          : undefined,
   });
 
   const owners = ownerEmails();

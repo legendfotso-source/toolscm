@@ -91,3 +91,35 @@ export function reminderMessage(
     `Thank you 🙏`,
   ].join("\n");
 }
+
+/**
+ * Has this expiry already been announced?
+ *
+ * `reminded_for` holds the `end_date` a reminder was last sent FOR, not a flag
+ * and not "when we last wrote to them". That choice is what makes the daily
+ * job safe to run every day and correct across renewals at the same time:
+ *
+ *   sent for this expiry  → the values match → not due again today;
+ *   never sent            → null             → due;
+ *   renewed since         → end_date moved   → due again, for the NEW expiry,
+ *                                              with nothing to reset.
+ *
+ * Compared as instants rather than as strings. Postgres may hand back a
+ * timestamptz formatted differently from the one that was written — a
+ * different offset, more or fewer fractional digits — and a string comparison
+ * would then find them unequal and re-send the same reminder every morning
+ * until the subscription expired.
+ *
+ * An unparseable `reminded_for` counts as "never sent". Sending one reminder
+ * too many is a mild annoyance; skipping it loses a subscriber who would have
+ * renewed.
+ */
+export function reminderDue(endDate: string, remindedFor: string | null | undefined): boolean {
+  if (!remindedFor) return true;
+
+  const sentFor = new Date(remindedFor).getTime();
+  const ends = new Date(endDate).getTime();
+  if (Number.isNaN(sentFor) || Number.isNaN(ends)) return true;
+
+  return sentFor !== ends;
+}

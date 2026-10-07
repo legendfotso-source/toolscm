@@ -91,7 +91,7 @@ const { verifyNotchpaySignature, verifyStripeSignature } = await import(
 );
 const { plans, getPlan, plansForTier, planForTier, pricesByTier } = await import(join(out, "plans.js"));
 const { formatXaf, formatUsd } = await import(join(out, "format.js"));
-const { daysUntil, reminderMessage, REMIND_WITHIN_DAYS } = await import(
+const { daysUntil, reminderDue, reminderMessage, REMIND_WITHIN_DAYS } = await import(
   join(out, "reminders.js")
 );
 const { createHmac } = await import("node:crypto");
@@ -488,6 +488,42 @@ check("the reminder reads naturally at one day and at zero", () => {
 check("the reminder window is short enough not to pester", () => {
   assert.ok(REMIND_WITHIN_DAYS >= 1 && REMIND_WITHIN_DAYS <= 7);
   return `${REMIND_WITHIN_DAYS} days`;
+});
+
+check("a daily job sends one reminder per expiry, not one per day", () => {
+  const ends = "2026-11-30T09:30:00.000Z";
+
+  // Never told.
+  assert.equal(reminderDue(ends, null), true, "a subscription nobody has written to is not due");
+  assert.equal(reminderDue(ends, ""), true, "an empty marker is not 'already sent'");
+
+  // Told, this morning. Tomorrow's run must not tell them again.
+  assert.equal(reminderDue(ends, ends), false, "the same expiry was announced twice");
+
+  // The same instant, written back by Postgres in another shape. This is the
+  // case that matters: a string comparison finds these unequal and re-sends
+  // the reminder every morning until the subscription expires.
+  for (const written of [
+    "2026-11-30T09:30:00+00:00",
+    "2026-11-30 09:30:00+00",
+    "2026-11-30T10:30:00.000+01:00",
+    "2026-11-30T09:30:00.000000Z",
+  ]) {
+    assert.equal(reminderDue(ends, written), false, `“${written}” was treated as a different expiry`);
+  }
+
+  // Renewed since. end_date moved, so the NEXT expiry is eligible with
+  // nothing to reset — which is the whole reason this is a date and not a flag.
+  assert.equal(
+    reminderDue("2026-12-30T09:30:00.000Z", ends),
+    true,
+    "a renewed subscriber will never be reminded again",
+  );
+
+  // Garbage counts as never sent: one reminder too many is an annoyance,
+  // skipping it loses a subscriber who would have renewed.
+  assert.equal(reminderDue(ends, "not a date"), true);
+  return "once per expiry, across four date spellings, and again after a renewal";
 });
 
 
