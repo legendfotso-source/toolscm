@@ -128,6 +128,14 @@ export type Audience = {
 };
 
 export type Member = {
+  /**
+   * The account id, so a row in the table can link to its own page.
+   *
+   * Added for the detail page. Deliberately NOT the email: the email is a
+   * display copy the account holder can edit, and 0004 is the record of what
+   * happens when something that decides an action is keyed on it.
+   */
+  id: string;
   email: string;
   joinedAt: string;
   isAdmin: boolean;
@@ -396,6 +404,7 @@ export async function getMembers(limit = 200): Promise<Member[]> {
   return profiles.map((row) => {
     const sub = subs.get(row.id);
     return {
+      id: row.id,
       email: row.email ?? "",
       joinedAt: row.created_at,
       isAdmin: row.is_admin,

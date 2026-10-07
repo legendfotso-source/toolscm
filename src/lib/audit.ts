@@ -2,6 +2,10 @@ import "server-only";
 
 import { adminClient } from "./supabase/admin";
 import type { Role } from "./auth/owner";
+import type { AuditAction } from "./audit-labels";
+
+export { ACTION_LABEL } from "./audit-labels";
+export type { AuditAction } from "./audit-labels";
 
 /**
  * What happened on the platform, and who did it.
@@ -22,31 +26,6 @@ import type { Role } from "./auth/owner";
  * `metadata`, and reviewers should keep it that way), and reads. An audit of
  * every page view is an audit nobody reads; this records decisions.
  */
-
-/**
- * The actions worth a line. A closed list rather than free text, because a
- * log you cannot filter is a log you scroll past — and because a typo in an
- * action name silently creates a second category that no query finds.
- */
-export type AuditAction =
-  | "grant.create"
-  | "grant.revoke"
-  | "subscription.grant"
-  | "subscription.revoke"
-  | "unlimited.enable"
-  | "unlimited.disable"
-  | "claim.approve"
-  | "claim.reject"
-  | "account.suspend"
-  | "account.block"
-  | "account.unblock"
-  | "account.deactivate"
-  | "account.restore"
-  | "admin.appoint"
-  | "admin.dismiss"
-  | "note.add"
-  | "settings.update"
-  | "contact.status";
 
 export type AuditEntry = {
   id: number;
@@ -151,25 +130,3 @@ export async function recent(
     createdAt: row.created_at,
   }));
 }
-
-/** One line of French for each action, for the admin screens. */
-export const ACTION_LABEL: Record<AuditAction, string> = {
-  "grant.create": "Accès accordé",
-  "grant.revoke": "Accès retiré",
-  "subscription.grant": "Abonnement activé à la main",
-  "subscription.revoke": "Abonnement annulé",
-  "unlimited.enable": "Illimité activé",
-  "unlimited.disable": "Illimité retiré",
-  "claim.approve": "Paiement déclaré approuvé",
-  "claim.reject": "Paiement déclaré refusé",
-  "account.suspend": "Compte suspendu",
-  "account.block": "Compte bloqué",
-  "account.unblock": "Compte débloqué",
-  "account.deactivate": "Compte désactivé",
-  "account.restore": "Compte rétabli",
-  "admin.appoint": "Administrateur nommé",
-  "admin.dismiss": "Administrateur retiré",
-  "note.add": "Note interne ajoutée",
-  "settings.update": "Réglages modifiés",
-  "contact.status": "Message de contact traité",
-};

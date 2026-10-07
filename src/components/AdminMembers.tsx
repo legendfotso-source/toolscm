@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
@@ -186,9 +188,19 @@ export function AdminMembers({
                 </thead>
                 <tbody>
                   {shown.map((member) => (
-                    <tr key={member.email + member.joinedAt} className="border-b border-line/60">
+                    <tr key={member.id} className="border-b border-line/60">
                       <td className="py-2.5 pr-3">
-                        <span className="break-all text-ink">{member.email || "—"}</span>
+                        {/* The address is now the way in to the account's own
+                            page. Keyed on the id, not the email: the email is
+                            a display copy the account holder can edit, and
+                            0004 is the record of what happens when something
+                            that decides an action is keyed on it. */}
+                        <Link
+                          href={`/admin/user/${member.id}`}
+                          className="break-all text-ink underline decoration-line underline-offset-2 hover:decoration-violet-deep"
+                        >
+                          {member.email || "(sans adresse)"}
+                        </Link>
                         {member.isAdmin ? (
                           <Badge tone="violet" className="ml-2 align-middle">
                             {fr ? "admin" : "admin"}

@@ -3,6 +3,7 @@ import "server-only";
 import { adminClient } from "./supabase/admin";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./supabase/config";
 import { ownerEmails } from "./auth/owner";
+import { contactRecipient } from "./email/mailer";
 
 /**
  * What is actually working, named plainly.
@@ -162,6 +163,30 @@ export async function runHealthChecks(): Promise<Check[]> {
       fix: claims.error ? "Run supabase/PASTE-INTO-SUPABASE.sql." : undefined,
     });
   }
+
+  // Email. Added the day the contact form stopped being a mailto: link —
+  // without a check here, "nobody is writing in" and "every message silently
+  // failed to send" look identical from the outside, which is exactly the
+  // class of silent fault this panel exists to end.
+  const mailKey = (process.env.RESEND_API_KEY ?? "").trim();
+  const from = (process.env.EMAIL_FROM ?? "").trim();
+  checks.push({
+    name: "Email (contact form)",
+    state: mailKey ? "ok" : "warn",
+    detail: mailKey
+      ? `${shapeOf(mailKey)} → ${contactRecipient()}` +
+        (from ? `, from ${from}` : ", from onboarding@resend.dev (Resend's own sender)")
+      : "RESEND_API_KEY is not set — messages are saved but nothing is emailed",
+    fix: mailKey
+      ? from
+        ? undefined
+        : "Without EMAIL_FROM, Resend's shared sender is used, which only delivers to " +
+          "the address that owns the Resend account. That is fine for the contact " +
+          "form. To email customers, verify a domain in Resend and set EMAIL_FROM."
+      : "Create a key at resend.com → API Keys and set RESEND_API_KEY in Vercel. " +
+        "Until then the contact form still works — messages land in /admin — but " +
+        "you will only see them by looking.",
+  });
 
   const owners = ownerEmails();
   checks.push({

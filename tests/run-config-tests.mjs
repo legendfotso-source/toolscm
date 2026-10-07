@@ -17,7 +17,7 @@
  */
 import { strict as assert } from "node:assert";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +48,30 @@ function compile(relative = join("src", "lib", "site.ts"), name = "site.js") {
     { stdio: "pipe" },
   );
   writeFileSync(join(out, "package.json"), JSON.stringify({ type: "module" }));
+
+  // `import "server-only"` is a Next build-time guard — it exists to make a
+  // client component importing a server module fail at build. Node has no such
+  // package, so the line is stripped from the compiled copy rather than the
+  // module being excluded from the tests: the guard is the thing we WANT in
+  // the real file, and a test that could not run because of it would push
+  // somebody to remove it.
+  // tsc emits every file the entry point imports, and leaves the specifiers
+  // extensionless — which Node's ESM resolver refuses. Both fixes are applied
+  // to every emitted file rather than only the entry point, so a module that
+  // gains an import tomorrow does not break this harness.
+  for (const emitted of readdirSync(out)) {
+    if (!emitted.endsWith(".js")) continue;
+    const path = join(out, emitted);
+    writeFileSync(
+      path,
+      readFileSync(path, "utf8")
+        .replace(/^\s*import\s+["']server-only["'];?\s*$/gm, "")
+        .replace(
+          /(from\s+["']\.\.?\/[^"']+)(["'])/g,
+          (match, target, quote) => (target.endsWith(".js") ? match : `${target}.js${quote}`),
+        ),
+    );
+  }
   return join(out, name);
 }
 
@@ -334,6 +358,169 @@ await check("the way back after signing in can only be a page on this site", () 
   }
   assert.equal(access.signInHref("//evil.example"), "/signin?next=%2F");
   return `${ok.length} kept, ${hostile.length} refused`;
+});
+
+
+// ---------------------------------------------------------------------------
+// The contact form (phase 3)
+// ---------------------------------------------------------------------------
+
+await check("the email check keeps real addresses and refuses unusable ones", async () => {
+  // Deliberately not an RFC 5322 regex. On a contact form, over-strict
+  // validation turns away the customer who most wants to reach you, and the
+  // only thing worth asserting is the shape that makes a REPLY possible.
+  const contact = await import(
+    `file://${compile(join("src", "lib", "email", "address.ts"), "address.js")}`
+  );
+
+  const real = [
+    "legendfotso@gmail.com",
+    "a@b.cm",
+    "jean-pierre.ndjock+devis@orange.cm",
+    "KOUOKAM.Simo@possa-tech.co.uk",
+    "service_client@tools.africa",
+  ];
+  for (const address of real) {
+    assert.equal(contact.looksLikeEmail(address), true, `refused a real address: ${address}`);
+  }
+
+  const unusable = [
+    "",
+    "   ",
+    "legendfotso",
+    "legendfotso@",
+    "@gmail.com",
+    "legendfotso@gmail",          // no dot: nothing to deliver to
+    "two@@gmail.com",
+    "with space@gmail.com",
+    "a@b.c d",
+    `${"x".repeat(330)}@gmail.com`,
+  ];
+  for (const address of unusable) {
+    assert.equal(
+      contact.looksLikeEmail(address),
+      false,
+      `accepted an address we could never reply to: ${JSON.stringify(address)}`,
+    );
+  }
+  return `${real.length} kept, ${unusable.length} refused`;
+});
+
+await check("contact messages go where the server says, never where the body says", async () => {
+  // An endpoint that emails wherever the request asks is an open relay with a
+  // nice form on it. The recipient is read from the environment, and the route
+  // never passes anything from the body into it.
+  const mailer = await import(
+    `file://${compile(join("src", "lib", "email", "mailer.ts"), "mailer.js")}`
+  );
+
+  const previous = process.env.CONTACT_TO_EMAIL;
+  try {
+    delete process.env.CONTACT_TO_EMAIL;
+    assert.equal(mailer.contactRecipient(), "legendfotso@gmail.com", "wrong default recipient");
+    process.env.CONTACT_TO_EMAIL = "someone-else@example.com";
+    assert.equal(mailer.contactRecipient(), "someone-else@example.com");
+  } finally {
+    if (previous === undefined) delete process.env.CONTACT_TO_EMAIL;
+    else process.env.CONTACT_TO_EMAIL = previous;
+  }
+
+  // And the route must not read a recipient from the request at all.
+  const source = readFileSync(join(root, "src", "app", "api", "contact", "route.ts"), "utf8");
+  for (const needle of ["body.to", "input.to", "parsed.data.to"]) {
+    assert.equal(source.includes(needle), false, `the route reads ${needle} from the request`);
+  }
+  // And the schema has no recipient field to read in the first place.
+  assert.equal(/\bto:\s*z\./.test(source), false, "the request schema accepts a recipient");
+  return "default is legendfotso@gmail.com, overridable only by the server";
+});
+
+await check("no mail provider means no false confirmation", async () => {
+  // The worst possible behaviour here is a stub that pretends to send: the
+  // site would tell a customer "message sent" when the message reached nobody,
+  // and nothing anywhere would say so. With no key configured, send() reports
+  // failure and the row records it.
+  const mailer = await import(
+    `file://${compile(join("src", "lib", "email", "mailer.ts"), "mailer.js")}?v=2`
+  );
+  const previous = process.env.RESEND_API_KEY;
+  try {
+    delete process.env.RESEND_API_KEY;
+    mailer.resetMailer();
+    assert.equal(mailer.mailConfigured(), false, "claimed a mailer with no key");
+    const result = await mailer.send({ to: "a@b.cm", subject: "x", text: "y" });
+    assert.equal(result.ok, false, "reported success with no provider configured");
+    assert.equal(result.reason, "no_mail_provider");
+  } finally {
+    if (previous === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previous;
+    mailer.resetMailer();
+  }
+  return "send() fails honestly rather than pretending";
+});
+
+
+await check("every admin page and endpoint gates on the role, in its own file", async () => {
+  // A structural check, and it exists because the behavioural one cannot work.
+  //
+  // The access suite runs against a build with no database, so /admin/user/:id
+  // answers 404 whether or not it checks the role — the account lookup returns
+  // nothing either way. Deleting the gate from that page therefore passes
+  // every behavioural test, which makes this the one invariant that has to be
+  // asserted structurally.
+  //
+  // What it really protects is the NEXT admin screen. Somebody adding
+  // /admin/payments in six months copies an existing file; if they copy one
+  // without a gate, nothing anywhere notices until a stranger reads it.
+  const roots = [
+    join(root, "src", "app", "admin"),
+    join(root, "src", "app", "api", "admin"),
+  ];
+
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(ts|tsx)$/.test(entry.name)) files.push(full);
+    }
+  };
+  for (const dir of roots) walk(dir);
+
+  assert.ok(files.length >= 5, `expected several admin files, found ${files.length}`);
+
+  for (const file of files) {
+    const source = readFileSync(file, "utf8");
+    const where = file.slice(root.length + 1);
+
+    // Either gate is acceptable; what is not acceptable is neither.
+    const gated = /currentRole\(\)/.test(source) || /isAdmin\(\)/.test(source);
+    assert.ok(gated, `${where} has no role check at all`);
+
+    // And the role must be COMPARED, not merely computed.
+    //
+    // The first version of this check looked for a refusal anywhere in the
+    // file, which let the real mutation through: deleting the gate from the
+    // detail page leaves a `notFound()` further down — the one for an account
+    // that does not exist — so the file still looked as if it refused
+    // somebody. It refused the wrong somebody.
+    const compares =
+      /!\(await isAdmin\(\)\)/.test(source) ||
+      /===\s*"user"/.test(source) ||
+      /!==\s*"user"/.test(source) ||
+      /roleAtLeast\(/.test(source);
+    assert.ok(
+      compares,
+      `${where} works out the role and never compares it to anything`,
+    );
+
+    const refuses =
+      /notFound\(\)/.test(source) ||
+      /status:\s*404/.test(source) ||
+      /status:\s*403/.test(source);
+    assert.ok(refuses, `${where} compares the role but never refuses anybody`);
+  }
+  return `${files.length} admin files, every one gated`;
 });
 
 console.log("");

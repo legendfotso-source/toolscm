@@ -12,6 +12,7 @@ import { AdminActivity } from "./AdminActivity";
 import { AdminAudience } from "./AdminAudience";
 import { AdminMembers } from "./AdminMembers";
 import { AdminClaims } from "./AdminClaims";
+import { AdminInbox } from "./admin/AdminInbox";
 import { Button, Card, Notice, SectionHeading, cx } from "./ui";
 
 export function AdminDashboard({
@@ -217,6 +218,13 @@ export function AdminDashboard({
           waiting, and that is the most time-sensitive thing on this page. */}
       <div className="mt-6">
         <AdminClaims />
+      </div>
+
+      {/* Then the inbox. Second because a payment waiting to be confirmed is
+          costing somebody money right now, and a message is not — but both
+          are people waiting, and both belong above the figures. */}
+      <div className="mt-6">
+        <AdminInbox />
       </div>
 
       <div className="mt-6">

@@ -210,6 +210,50 @@ try {
     return "the page and both endpoints: 404, with nothing given away";
   });
 
+  await check("a stranger cannot read or change one account either", async () => {
+    // The detail page is the single screen that puts one person's address,
+    // payments and private notes together, so it is the one worth checking
+    // twice. 404 and not 403 throughout: the reply must not even confirm that
+    // an account with this id exists.
+    const anyId = "00000000-0000-0000-0000-000000000000";
+
+    const page = await fetch(`${BASE}/admin/user/${anyId}`);
+    assert.equal(page.status, 404, `/admin/user answered ${page.status}`);
+
+    const list = await fetch(`${BASE}/api/admin/users?query=gmail`);
+    assert.equal(list.status, 404, `the account search answered ${list.status}`);
+
+    const inbox = await fetch(`${BASE}/api/admin/contact`);
+    assert.equal(inbox.status, 404, `the contact inbox answered ${inbox.status}`);
+
+    // And the actions. Every one of these would be a privilege escalation if
+    // it answered anything other than 404 — granting yourself unlimited being
+    // the obvious one.
+    for (const body of [
+      { action: "grant", userId: anyId, tier: "unlimited" },
+      { action: "status", userId: anyId, status: "active" },
+      { action: "admin", userId: anyId, makeAdmin: true },
+      { action: "note", userId: anyId, body: "x" },
+      { action: "revoke", grantId: anyId },
+    ]) {
+      const answer = await fetch(`${BASE}/api/admin/users`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      assert.equal(answer.status, 404, `${body.action} answered ${answer.status}`);
+    }
+
+    const handled = await fetch(`${BASE}/api/admin/contact`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: anyId, status: "closed" }),
+    });
+    assert.equal(handled.status, 404, `marking a message answered ${handled.status}`);
+
+    return "the detail page, the search, the inbox and all six actions: 404";
+  });
+
   await check("nobody can declare a payment without an account", async () => {
     const response = await fetch(`${BASE}/api/payments/claim`, {
       method: "POST",
