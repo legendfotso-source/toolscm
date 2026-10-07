@@ -110,6 +110,21 @@ function loadCore() {
      export async function currentUser(): Promise<any> { return user; }`,
   );
 
+  // A notifier that records instead of sending. core.ts announces a settlement
+  // through a dynamic import, so the shim has to exist for the real module to
+  // compile at all — and having it record turns "did the customer get told"
+  // from a regex over the source into something these tests can assert.
+  writeFileSync(
+    join(shim, "notify.ts"),
+    `const sent: any[] = [];
+     export function receipts(): any[] { return sent; }
+     export function clearReceipts(): void { sent.length = 0; }
+     export async function notifyPaymentSettled(settled: any): Promise<any> {
+       sent.push(settled);
+       return { sent: true, id: "shim" };
+     }`,
+  );
+
   writeFileSync(join(shim, "server-only.ts"), "export {};\n");
   // core.ts imports SupabaseClient as a type only. The shape is irrelevant
   // here — the fake is checked by the assertions, not by the compiler.
@@ -149,6 +164,7 @@ function loadCore() {
         paths: {
           "server-only": ["shim/server-only.ts"],
           "@/lib/supabase/admin": ["shim/admin.ts"],
+          "@/lib/email/notify": ["shim/notify.ts"],
           "@/lib/supabase/session": ["shim/session.ts"],
           "@supabase/supabase-js": ["shim/supabase.ts"],
         },
@@ -164,6 +180,7 @@ function loadCore() {
         "src/receipt.ts",
         "src/settings.ts",
         "src/claims.ts",
+        "shim/notify.ts",
       ],
     }),
   );
@@ -193,6 +210,7 @@ function loadCore() {
     "src/settings.js",
     "src/claims.js",
     "shim/admin.js",
+    "shim/notify.js",
     "shim/session.js",
     "shim/server-only.js",
     "shim/supabase.js",
@@ -205,6 +223,7 @@ function loadCore() {
     const rewritten = readFileSync(path, "utf8")
       .replace(/^\s*import\s+["']server-only["'];?\s*$/gm, "")
       .replace(/from\s+["']@\/lib\/supabase\/admin["']/g, 'from "../shim/admin.js"')
+      .replace(/["']@\/lib\/email\/notify["']/g, '"../shim/notify.js"')
       .replace(/from\s+["']@\/lib\/supabase\/session["']/g, 'from "../shim/session.js"')
       .replace(/from\s+["']@supabase\/supabase-js["']/g, 'from "../shim/supabase.js"')
       .replace(
@@ -228,6 +247,7 @@ const claims = await import(join(out, "src", "claims.js"));
 const settingsModule = await import(join(out, "src", "settings.js"));
 const entitlement = await import(join(out, "src", "entitlement.js"));
 const stub = await import(join(out, "shim", "admin.js"));
+const notify = await import(join(out, "shim", "notify.js"));
 const session = await import(join(out, "shim", "session.js"));
 
 const results = [];
@@ -251,6 +271,7 @@ function world() {
     profiles: [{ id: "user-1", email: "client@example.com", is_admin: false }],
   });
   stub.setClient(client);
+  notify.clearReceipts();
   return client;
 }
 
@@ -327,6 +348,53 @@ await check("the same transaction id entered twice does NOT grant two months", a
     "the subscription was extended by a duplicate",
   );
   return "second attempt changes nothing";
+});
+
+await check("a grant tells the customer, exactly once", async () => {
+  // The site used to activate access in silence. The customer had sent money
+  // from their own Mobile Money account to a phone number and had no way to
+  // learn it had worked except to come back and look — which is why every
+  // payment used to end in a WhatsApp message asking whether it had.
+  world();
+
+  await core.grantPro({
+    userId: "user-1",
+    provider: "manual",
+    transactionId: "MP-RECEIPT-MAIL",
+    amount: 2000,
+    currency: "XAF",
+    tier: "max",
+    days: 90,
+  });
+
+  const sent = notify.receipts();
+  assert.equal(sent.length, 1, `${sent.length} receipts for one payment`);
+  assert.equal(sent[0].email, "client@example.com");
+  assert.equal(sent[0].amount, 2000);
+  assert.equal(sent[0].currency, "XAF");
+  assert.equal(sent[0].tier, "max", "the receipt names the wrong plan");
+  assert.equal(sent[0].days, 90);
+  // The date on the receipt is the date access actually runs to, not a
+  // recomputation of it: a receipt that disagrees with the account page is
+  // worse than no receipt.
+  assert.equal(days(new Date(), sent[0].proUntil), 90);
+
+  // And a repeat of the same transaction must not produce a second one.
+  await core.grantPro({
+    userId: "user-1",
+    provider: "manual",
+    transactionId: "MP-RECEIPT-MAIL",
+    amount: 2000,
+    currency: "XAF",
+    tier: "max",
+    days: 90,
+  });
+  assert.equal(
+    notify.receipts().length,
+    1,
+    "a redelivered payment sent the receipt again",
+  );
+  return "one receipt, with the real amount, plan and end date";
 });
 
 await check("a duplicate still returns the ORIGINAL receipt", async () => {
@@ -455,6 +523,44 @@ await check("a webhook delivered twice grants ONE month, not two", async () => {
     "the second delivery extended the subscription",
   );
   return "second delivery is a no-op";
+});
+
+await check("a webhook receipt goes out once, however many times it is delivered", async () => {
+  // The provider path is the one that matters most here: nobody is watching
+  // when a webhook lands, so a receipt that depends on an admin noticing is
+  // not a receipt. And providers redeliver — three times is normal.
+  world();
+  await core.createPendingPayment({
+    userId: "user-1",
+    provider: "campay",
+    reference: "tcm_mail",
+    amount: 5000,
+    currency: "XAF",
+    days: 30,
+    tier: "pro",
+  });
+
+  await core.settlePayment({ provider: "campay", reference: "tcm_mail", amount: 5000, currency: "xaf" });
+  await core.settlePayment({ provider: "campay", reference: "tcm_mail" });
+  await core.settlePayment({ provider: "campay", reference: "tcm_mail" });
+
+  const sent = notify.receipts();
+  assert.equal(sent.length, 1, `${sent.length} receipts for three deliveries of one payment`);
+  assert.equal(sent[0].amount, 5000, "the receipt does not say what was actually paid");
+  // The provider sent "xaf". A receipt showing a lowercase currency beside a
+  // formatted amount looks like a bug to the person reading it.
+  assert.equal(sent[0].currency, "XAF");
+  return "three deliveries, one receipt, the provider's own amount";
+});
+
+await check("a reference we never issued tells nobody anything", async () => {
+  // A forged webhook must not become a receipt — which would be a stranger
+  // using this site to send mail about a payment that never happened.
+  world();
+  const result = await core.settlePayment({ provider: "campay", reference: "tcm_forged" });
+  assert.equal(result.outcome, "unknown_reference");
+  assert.equal(notify.receipts().length, 0, "an unknown reference produced a receipt");
+  return "no row, no mail";
 });
 
 await check("the webhook and the return page racing still grant one month", async () => {
@@ -1330,6 +1436,105 @@ await check("missing 0005 tables leave everyone exactly as they were", async () 
   assert.equal(seen.tier, "max", "a customer lost their plan to a missing table");
   assert.equal(seen.status, "active", "a missing status column locked an account out");
   return "a pre-migration database keeps every customer on the plan they bought";
+});
+
+
+// ---------------------------------------------------------------------------
+// Payments that did not succeed (phase 5)
+// ---------------------------------------------------------------------------
+
+await check("a refused payment is written off, and a settled one never is", async () => {
+  // `failed` existed in the enum from the first migration and nothing ever
+  // wrote it. A customer who opened a checkout page and closed it left a row
+  // that stayed `pending` for ever — so "what is pending right now", the one
+  // reading that tells you a provider has gone quiet, stopped being answerable
+  // after a few hundred visitors.
+  const client = world();
+
+  await core.createPendingPayment({
+    userId: "user-1",
+    provider: "campay",
+    reference: "REF-REFUSED",
+    amount: 2000,
+    currency: "XAF",
+    days: 30,
+    tier: "pro",
+  });
+
+  assert.equal(
+    await core.markPaymentFailed({ provider: "campay", reference: "REF-REFUSED", reason: "FAILED" }),
+    "marked",
+  );
+  const refused = client.store.payments.find((row) => row.transaction_id === "REF-REFUSED");
+  assert.equal(refused.status, "failed", "a refused payment is still pending");
+
+  // And a payment that already succeeded must never be walked back by a late
+  // failure notification — which is exactly the shape of a provider retrying
+  // an old event.
+  await core.grantPro({
+    userId: "user-1",
+    provider: "manual",
+    transactionId: "REF-PAID",
+    amount: 2000,
+    currency: "XAF",
+    days: 30,
+    tier: "pro",
+  });
+  assert.equal(
+    await core.markPaymentFailed({ provider: "manual", reference: "REF-PAID", reason: "late" }),
+    "already_settled",
+    "a settled payment was walked back",
+  );
+  const paid = client.store.payments.find((row) => row.transaction_id === "REF-PAID");
+  assert.equal(paid.status, "succeeded", "a succeeded payment was marked failed");
+
+  // An unknown reference is told apart from a settled one: one is a mistake,
+  // the other is a race that already resolved the right way.
+  assert.equal(
+    await core.markPaymentFailed({ provider: "campay", reference: "NEVER-EXISTED" }),
+    "unknown_reference",
+  );
+  return "pending becomes failed; succeeded stays succeeded; unknown says so";
+});
+
+await check("abandoned checkouts stop claiming to be undecided", async () => {
+  const client = world();
+
+  await core.createPendingPayment({
+    userId: "user-1",
+    provider: "stripe",
+    reference: "REF-OLD",
+    amount: 500,
+    currency: "USD",
+    days: 30,
+    tier: "pro",
+  });
+  await core.createPendingPayment({
+    userId: "user-1",
+    provider: "stripe",
+    reference: "REF-FRESH",
+    amount: 500,
+    currency: "USD",
+    days: 30,
+    tier: "pro",
+  });
+
+  // Age the first one by a day.
+  const old = client.store.payments.find((row) => row.transaction_id === "REF-OLD");
+  old.created_at = new Date(Date.now() - 24 * 3_600_000).toISOString();
+
+  const closed = await core.expireStalePayments(12);
+  assert.equal(closed, 1, "the wrong number of payments were written off");
+  assert.equal(old.status, "failed", "the abandoned payment is still pending");
+
+  const fresh = client.store.payments.find((row) => row.transaction_id === "REF-FRESH");
+  assert.equal(
+    fresh.status,
+    "pending",
+    "a payment still in flight was written off — a Mobile Money confirmation " +
+      "held up overnight must not be lost",
+  );
+  return "a day-old checkout is closed, a minute-old one is left alone";
 });
 
 console.log("");

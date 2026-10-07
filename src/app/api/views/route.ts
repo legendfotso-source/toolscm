@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+import { hit, requesterKey } from "@/lib/rate-limit";
 import { z } from "zod";
 import { adminClient } from "@/lib/supabase/admin";
 import { dailyVisitorHash } from "@/lib/usage/server";
@@ -35,6 +37,22 @@ const Body = z.object({
 const SAFE_PATH = /^\/[A-Za-z0-9\-._~/]*$/;
 
 export async function POST(request: Request) {
+  // Unauthenticated and it writes. tool_events inserts a new row per request
+  // with no cap, so without this one loop fills a table nobody is watching.
+  // The ceiling is far above any real visitor: four a second, sustained.
+  const verdict = await hit({
+    bucket: "views",
+    key: await requesterKey(request.headers),
+    max: 240,
+    windowSeconds: 60,
+  });
+  if (!verdict.allowed) {
+    // 200, not 429. These endpoints already answer 200 to everything by
+    // design — analytics must never make a visitor's page look broken — and a
+    // 429 would be the one error the browser could see.
+    return NextResponse.json({ ok: true });
+  }
+
   const client = adminClient();
   // No database configured: accept and discard, exactly like /api/events, so
   // the browser never has to know whether analytics exist.

@@ -183,6 +183,21 @@ export async function grantPro(input: GrantInput): Promise<GrantResult> {
     .update({ subscription_id: subscriptionId })
     .eq("id", created.id);
 
+  // Only on the branch that actually granted. The duplicate branch above
+  // returns before reaching here, which is what stops a provider's third
+  // delivery of the same webhook from being a third receipt in somebody's
+  // inbox.
+  await announceSettlement({
+    userId: input.userId,
+    paymentId: created.id,
+    amount: input.amount,
+    currency: input.currency.toUpperCase(),
+    paidAt: created.created_at,
+    proUntil: end.toISOString(),
+    days,
+    tier,
+  });
+
   return {
     granted: true,
     duplicate: false,
@@ -191,6 +206,54 @@ export async function grantPro(input: GrantInput): Promise<GrantResult> {
     paidAt: created.created_at,
     days,
   };
+}
+
+/**
+ * Tell the customer, and let nothing about it reach the caller.
+ *
+ * Both grant paths call this on the branch that granted, and only there. It
+ * catches everything, including the email lookup: this function runs after the
+ * money has been confirmed and the subscription written, so there is no failure
+ * it can report that would be worth undoing an activation for. A log line is
+ * the whole error handling, on purpose.
+ *
+ * The import is lazy. `grantPro` and `settlePayment` are reached from tests and
+ * from scripts that have no mail configuration and no need of one, and a static
+ * import would pull the mailer — and its `server-only` guard — into every one
+ * of those.
+ */
+async function announceSettlement(settled: {
+  userId: string;
+  paymentId: string;
+  amount: number;
+  currency: string;
+  paidAt: string;
+  proUntil: string | null;
+  days: number;
+  tier: TierId;
+}): Promise<void> {
+  try {
+    const { notifyPaymentSettled } = await import("@/lib/email/notify");
+    const email = await emailForUserId(settled.userId);
+    // A receipt names a paid plan. `TierId` also contains "free", which no
+    // payment should ever carry; if one does, that is a data fault, so it is
+    // logged rather than passed through. The receipt then reads "Pro", which
+    // is what it already says for every payment made before Max existed —
+    // not a guess invented here.
+    const paidTier = settled.tier === "max" || settled.tier === "pro" ? settled.tier : undefined;
+    if (!paidTier) {
+      console.warn(`[Tools.cm] payment ${settled.paymentId} settled with tier "${settled.tier}"`);
+    }
+    const result = await notifyPaymentSettled({ ...settled, tier: paidTier, email });
+    if (!result.sent && result.reason !== "no mail provider configured") {
+      console.warn(`[Tools.cm] no receipt sent for payment ${settled.paymentId}: ${result.reason}`);
+    }
+  } catch (error) {
+    console.error(
+      `[Tools.cm] the receipt for payment ${settled.paymentId} could not be sent:`,
+      error instanceof Error ? error.message : error,
+    );
+  }
 }
 
 async function currentProUntil(client: SupabaseClient, userId: string): Promise<string | null> {
@@ -311,7 +374,7 @@ export async function settlePayment(input: {
     .eq("provider", input.provider)
     .eq("transaction_id", input.reference)
     .eq("status", "pending")
-    .select("id, user_id, created_at, raw")
+    .select("id, user_id, created_at, amount, currency, raw")
     .maybeSingle();
 
   const row = claimed.data as
@@ -319,6 +382,8 @@ export async function settlePayment(input: {
         id: string;
         user_id: string | null;
         created_at: string;
+        amount: number | null;
+        currency: string | null;
         raw: { days?: number; tier?: string } | null;
       }
     | null;
@@ -403,6 +468,26 @@ export async function settlePayment(input: {
     })
     .eq("id", row.id);
 
+  // The customer is told, from here, for every provider at once. Each webhook
+  // and return handler would otherwise need its own copy of this — and the one
+  // that got forgotten would be the one whose customers never hear back.
+  //
+  // Placed after every write, and awaited. After, because a mail provider must
+  // never be able to cost somebody the access they paid for. Awaited, because
+  // on Vercel the function stops the moment the response is returned: a promise
+  // left dangling here is a receipt that is sometimes sent and sometimes not,
+  // depending on how fast the loop happened to get to it.
+  await announceSettlement({
+    userId: row.user_id,
+    paymentId: row.id,
+    amount: (typeof input.amount === "number" ? input.amount : row.amount) ?? 0,
+    currency: (input.currency ?? row.currency ?? "XAF").toUpperCase(),
+    paidAt: row.created_at,
+    proUntil: end.toISOString(),
+    days,
+    tier,
+  });
+
   return {
     outcome: "granted",
     userId: row.user_id,
@@ -474,4 +559,137 @@ export async function findUserIdByEmail(email: string): Promise<string | null> {
   const { data } = await client.from("profiles").select("id").ilike("email", wanted).limit(2);
   const rows = (data as { id: string }[] | null) ?? [];
   return rows.length === 1 ? rows[0].id : null;
+}
+
+/**
+ * The address to write to for an account.
+ *
+ * The mirror of `findUserIdByEmail`, and resolved the same way and for the same
+ * reason: through Supabase Auth first. `profiles.email` is a copy the account
+ * holder can write, so using it here would let somebody have another person's
+ * receipt — including the amount they paid — delivered to an address of their
+ * choosing. The Auth address is the one they can actually sign in with.
+ *
+ * The profile copy is still the fallback, because a receipt that goes nowhere
+ * is worse than one sent to a weaker source of the same address, and this is
+ * only ever used to notify, never to decide who gets access.
+ *
+ * Returns null rather than throwing: every caller is a notification path.
+ */
+export async function emailForUserId(userId: string): Promise<string | null> {
+  const client = requireAdminClient();
+  if (!userId) return null;
+
+  try {
+    const { data, error } = await client.auth.admin.getUserById(userId);
+    const address = data?.user?.email?.trim();
+    if (!error && address) return address;
+  } catch {
+    // Fall through to the profile copy.
+  }
+
+  try {
+    const { data } = await client
+      .from("profiles")
+      .select("email")
+      .eq("id", userId)
+      .maybeSingle();
+    const address = (data as { email?: string | null } | null)?.email?.trim();
+    return address || null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Payments that did not succeed
+// ---------------------------------------------------------------------------
+
+/**
+ * Mark a reserved payment as failed, cancelled or expired.
+ *
+ * `payment_status` has had `failed` and `refunded` since the first migration
+ * and nothing ever wrote either of them. The consequence was quiet and it
+ * compounded: a customer who opened a checkout page and closed it left a
+ * `pending` row that stayed pending for ever. Nothing cleared it, nothing
+ * reported it, and the admin figures counted an abandoned click the same way
+ * they counted a payment still in flight. After a few hundred visitors, "what
+ * is pending right now" — the one question that tells you a provider has gone
+ * quiet — stops being answerable.
+ *
+ * Only a `pending` row is touched, for the same reason settlement only touches
+ * a pending row: a payment that already succeeded must never be walked back by
+ * a late failure notification, which is exactly the shape of a provider
+ * retrying an old event.
+ */
+export async function markPaymentFailed(input: {
+  provider: Provider;
+  reference: string;
+  reason?: string;
+  raw?: unknown;
+}): Promise<"marked" | "already_settled" | "unknown_reference"> {
+  const client = requireAdminClient();
+
+  const { data, error } = await client
+    .from("payments")
+    .update({
+      status: "failed",
+      raw: {
+        failedAt: new Date().toISOString(),
+        reason: input.reason ?? null,
+        detail: input.raw ?? null,
+      },
+    })
+    .eq("provider", input.provider)
+    .eq("transaction_id", input.reference)
+    .eq("status", "pending")
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.error("[Tools.cm] could not mark a payment failed:", error.message);
+    return "unknown_reference";
+  }
+  if (data) return "marked";
+
+  // Nothing matched: either the reference is unknown, or the row is no longer
+  // pending. Told apart, because they mean different things to a caller — one
+  // is a mistake and the other is a race that already resolved the right way.
+  const { data: existing } = await client
+    .from("payments")
+    .select("status")
+    .eq("provider", input.provider)
+    .eq("transaction_id", input.reference)
+    .maybeSingle();
+  return existing ? "already_settled" : "unknown_reference";
+}
+
+/**
+ * Close out payments nobody ever completed.
+ *
+ * A checkout page opened and abandoned leaves a pending row; after a few hours
+ * it is not "in flight", it is abandoned, and leaving it pending makes the
+ * only useful reading of that column impossible.
+ *
+ * Twelve hours by default — long enough that a Mobile Money confirmation held
+ * up overnight is not written off, short enough that yesterday's abandoned
+ * clicks are out of today's picture. Expiring a payment grants nothing and
+ * takes nothing away: it only stops the row claiming to be undecided.
+ */
+export async function expireStalePayments(olderThanHours = 12): Promise<number> {
+  const client = requireAdminClient();
+  const cutoff = new Date(Date.now() - Math.max(1, olderThanHours) * 3_600_000).toISOString();
+
+  const { data, error } = await client
+    .from("payments")
+    .update({ status: "failed", raw: { expiredAt: new Date().toISOString(), reason: "abandoned" } })
+    .eq("status", "pending")
+    .lt("created_at", cutoff)
+    .select("id");
+
+  if (error) {
+    console.error("[Tools.cm] could not expire stale payments:", error.message);
+    return 0;
+  }
+  return (data ?? []).length;
 }

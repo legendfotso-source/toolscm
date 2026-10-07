@@ -33,7 +33,19 @@ export const DEFAULT_SETTINGS: AdminSettings = {
 
 // A short cache: settings change rarely, and every tool run would otherwise
 // cost a round-trip to the database before any work could start.
-const TTL_MS = 60_000;
+//
+// Twelve seconds, not sixty. The cache lives in ONE lambda, and
+// `invalidateSettingsCache()` clears it only in the instance that handled the
+// POST — so every other warm instance keeps serving the old value until its
+// own copy expires. That made a price change, or switching payments on, take
+// effect at different moments on different instances: for up to a minute, one
+// customer could be quoted the old price while another was quoted the new one.
+//
+// The honest fix is to make the window short enough not to matter rather than
+// to pretend the invalidation is global. Twelve seconds costs five database
+// reads a minute per warm instance — nothing — and bounds the disagreement to
+// about the time it takes to notice a price looked wrong and reload.
+const TTL_MS = 12_000;
 let cache: { at: number; value: AdminSettings } | null = null;
 
 export async function getSettings(): Promise<AdminSettings> {
@@ -66,6 +78,16 @@ export async function getSettings(): Promise<AdminSettings> {
   return merged;
 }
 
+/**
+ * Clear this instance's copy.
+ *
+ * THIS INSTANCE'S. The name has always promised more than it delivers: on
+ * Vercel there is no way for one function invocation to reach into another's
+ * memory, so this clears exactly one cache and the others expire on their own.
+ * It is still worth calling — the administrator who just saved a setting is
+ * usually the next person to load a page, and it is their instance that is
+ * warm — but the TTL above is what actually bounds the disagreement.
+ */
 export function invalidateSettingsCache(): void {
   cache = null;
 }

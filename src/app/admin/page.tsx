@@ -49,7 +49,6 @@ export default async function AdminPage() {
       audience={audience}
       members={members}
       health={healthPanel}
-      role={role}
     />
   );
 }

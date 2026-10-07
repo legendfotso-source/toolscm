@@ -136,6 +136,13 @@ export async function POST(request: Request) {
       successUrl: returnUrl,
       cancelUrl: `${SITE_URL}/pricing?cancelled=1`,
     });
+
+    // Stored before the customer leaves, exactly as CamPay's reference is.
+    // This is what lets the return page ask Stripe whether the payment went
+    // through, instead of waiting for a webhook that may never arrive.
+    if (session.sessionId) {
+      await attachProviderRef("stripe", reference, session.sessionId);
+    }
     return NextResponse.json({ url: session.url });
   } catch (error) {
     console.error("[Tools.cm] checkout failed:", error);

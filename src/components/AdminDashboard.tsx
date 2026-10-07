@@ -3,7 +3,6 @@
 import { useState, type ReactNode } from "react";
 import { useLocale } from "@/lib/i18n/LocaleProvider";
 import type { AdminStats, Audience, Member } from "@/lib/admin";
-import type { Role } from "@/lib/auth/owner";
 import type { AdminSettings } from "@/lib/settings";
 import { getTool } from "@/lib/tools/registry";
 import { AdminProAccess } from "./AdminProAccess";
@@ -21,7 +20,6 @@ export function AdminDashboard({
   audience,
   members,
   health,
-  role,
 }: {
   stats: AdminStats;
   settings: AdminSettings;
@@ -29,7 +27,6 @@ export function AdminDashboard({
   members: Member[];
   /** Rendered on the server and passed down; see HealthPanel for why. */
   health: ReactNode;
-  role: Role;
 }) {
   const { locale, tx } = useLocale();
   const [draft, setDraft] = useState<AdminSettings>(settings);

@@ -41,6 +41,111 @@ export function campayConfigured(): boolean {
   return Boolean(process.env.CAMPAY_USERNAME && process.env.CAMPAY_PASSWORD);
 }
 
+/** Which CamPay this deployment is talking to, in one word. */
+export function campayEnvironment(): "live" | "sandbox" {
+  return host() === LIVE ? "live" : "sandbox";
+}
+
+export type CampayDiagnosis = {
+  configured: boolean;
+  environment: "live" | "sandbox";
+  host: string;
+  /** null when the credentials were never tried, because there are none. */
+  credentials: "accepted" | "refused" | "unreachable" | null;
+  /** Safe to show: the HTTP status and CamPay's own words, never a secret. */
+  detail: string;
+};
+
+/**
+ * Can this deployment actually talk to CamPay?
+ *
+ * There are three ways the payment path is broken that look identical from
+ * outside, and the one visible symptom of all three is a customer saying the
+ * payment page did not open:
+ *
+ *   no credentials at all — checkout never starts;
+ *   credentials for the OTHER environment — demo username against the live
+ *     host, or the reverse, which is the most likely mistake of the three
+ *     because the two accounts are separate and the variables are not;
+ *   credentials that were revoked or mistyped.
+ *
+ * Asking for a token distinguishes them, and a token request is the cheapest
+ * authenticated call CamPay has. The token itself is thrown away — the point
+ * is whether one was issued, never its value.
+ *
+ * The module-level token cache is deliberately NOT consulted or filled here: a
+ * cached token would make this report that credentials are accepted for up to
+ * five minutes after they stopped being, which is the opposite of what a
+ * diagnostic is for.
+ */
+export async function campayDiagnosis(): Promise<CampayDiagnosis> {
+  const environment = campayEnvironment();
+  const base = host();
+
+  if (!campayConfigured()) {
+    return {
+      configured: false,
+      environment,
+      host: base,
+      credentials: null,
+      detail: "CAMPAY_USERNAME and CAMPAY_PASSWORD are not both set",
+    };
+  }
+
+  try {
+    const response = await fetch(`${base}/api/token/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: process.env.CAMPAY_USERNAME,
+        password: process.env.CAMPAY_PASSWORD,
+      }),
+      cache: "no-store",
+      // The admin page awaits this. Without a ceiling, a CamPay outage would
+      // stop /admin rendering at all — and /admin is where you go to find out
+      // that CamPay is down.
+      signal: AbortSignal.timeout(6000),
+    });
+
+    const payload = (await response.json().catch(() => null)) as
+      | { token?: string; detail?: string; non_field_errors?: string[] }
+      | null;
+
+    if (response.ok && payload?.token) {
+      return {
+        configured: true,
+        environment,
+        host: base,
+        credentials: "accepted",
+        detail: `${base} issued a token`,
+      };
+    }
+
+    const said =
+      payload?.detail ??
+      payload?.non_field_errors?.join(" ") ??
+      "no token in the response";
+
+    return {
+      configured: true,
+      environment,
+      host: base,
+      credentials: "refused",
+      detail: `${base} answered ${response.status}: ${said}`,
+    };
+  } catch (error) {
+    // A network fault is not a credential fault, and saying so matters: the
+    // fix for one is a new API password and the fix for the other is waiting.
+    return {
+      configured: true,
+      environment,
+      host: base,
+      credentials: "unreachable",
+      detail: `could not reach ${base}: ${error instanceof Error ? error.message : "unknown error"}`,
+    };
+  }
+}
+
 /**
  * Fetch an access token.
  *

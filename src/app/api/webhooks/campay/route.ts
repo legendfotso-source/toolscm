@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+import { hit, requesterKey, sweepOldHits } from "@/lib/rate-limit";
 import { settlePayment } from "@/lib/payments/core";
 import { verifyPayment } from "@/lib/payments/providers/campay";
 
@@ -24,6 +26,29 @@ export const dynamic = "force-dynamic";
  * not guessing at cryptography.
  */
 export async function POST(request: Request) {
+  // Before anything, and before any outbound call.
+  //
+  // This endpoint has no signature, deliberately: forging one grants nothing,
+  // because the handler re-asks CamPay before settling. What that reasoning
+  // missed is volume — every POST here makes the server fetch a token and then
+  // a status from CamPay, so an unlimited endpoint is an amplifier pointed at
+  // the CamPay quota and the function budget. The ceiling is generous enough
+  // that a real burst of notifications passes and tight enough that a loop
+  // does not.
+  const verdict = await hit({
+    bucket: "webhook:campay",
+    key: await requesterKey(request.headers),
+    max: 120,
+    windowSeconds: 60,
+  });
+  void sweepOldHits();
+  if (!verdict.allowed) {
+    // 429 with no body. CamPay retries on a 5xx, which is right for a real
+    // failure and wrong here: this request was not a failure, it was one too
+    // many, and inviting a retry would make the burst worse.
+    return new NextResponse(null, { status: 429 });
+  }
+
   let event: {
     reference?: string;
     external_reference?: string;

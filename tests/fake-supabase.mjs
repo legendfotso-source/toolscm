@@ -76,6 +76,11 @@ class Query {
     return this;
   }
 
+  lt(column, value) {
+    this.filters.push((row) => row[column] !== null && row[column] !== undefined && row[column] < value);
+    return this;
+  }
+
   gt(column, value) {
     this.filters.push((row) => row[column] !== null && row[column] !== undefined && row[column] > value);
     return this;

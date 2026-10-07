@@ -4,6 +4,7 @@ import { adminClient } from "./supabase/admin";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./supabase/config";
 import { ownerEmails } from "./auth/owner";
 import { contactRecipient } from "./email/mailer";
+import { campayDiagnosis } from "./payments/providers/campay";
 
 /**
  * What is actually working, named plainly.
@@ -186,6 +187,37 @@ export async function runHealthChecks(): Promise<Check[]> {
       : "Create a key at resend.com → API Keys and set RESEND_API_KEY in Vercel. " +
         "Until then the contact form still works — messages land in /admin — but " +
         "you will only see them by looking.",
+  });
+
+  // CamPay. The whole revenue path for a Cameroonian customer runs through it,
+  // and until now nothing on this page said a word about it: the first sign
+  // that the credentials were for the wrong environment would have been a
+  // customer saying the payment page did not open.
+  const campay = await campayDiagnosis();
+  checks.push({
+    name: "CamPay",
+    state: !campay.configured ? "warn" : campay.credentials === "accepted" ? "ok" : "fail",
+    detail: !campay.configured
+      ? `${campay.detail} — Mobile Money checkout is off`
+      : `${campay.environment} · ${campay.detail}` +
+        (campay.environment === "sandbox" && campay.credentials === "accepted"
+          ? " — no real money moves here"
+          : ""),
+    fix: !campay.configured
+      ? "Create an application in the CamPay dashboard, then set CAMPAY_USERNAME and " +
+        "CAMPAY_PASSWORD in Vercel as Secret. Leave CAMPAY_ENVIRONMENT unset to stay " +
+        "on demo.campay.net; set it to PROD only once a test payment has worked."
+      : campay.credentials === "refused"
+        ? `The credentials were rejected by the ${campay.environment} host. demo and live ` +
+          "are separate accounts with separate credentials, so the likeliest cause is a " +
+          "username and password from the other one. Check CAMPAY_ENVIRONMENT " +
+          "(PROD means campay.net; anything else means demo.campay.net)."
+        : campay.credentials === "unreachable"
+          ? "CamPay did not answer. Nothing to change here — if it persists, ask them."
+          : campay.environment === "sandbox"
+            ? "This is the demo host. Set CAMPAY_ENVIRONMENT=PROD, with live credentials, " +
+              "when you are ready to take real payments."
+            : undefined,
   });
 
   const owners = ownerEmails();

@@ -523,6 +523,63 @@ await check("every admin page and endpoint gates on the role, in its own file", 
   return `${files.length} admin files, every one gated`;
 });
 
+
+await check("the Stripe return verifies, and a missed webhook is survivable", async () => {
+  // The worst open defect in the payment flow, and it was one discarded value.
+  //
+  // `retrieveSession` takes STRIPE's session id, not our reference. The
+  // checkout route received the id and threw it away, so the return page had
+  // nothing to ask about and the verify route answered "pending" for Stripe
+  // unconditionally. Entitlement then rested entirely on the webhook: with
+  // STRIPE_WEBHOOK_SECRET unset, or the endpoint misconfigured, or one
+  // delivery lost, the customer was charged and never upgraded — and nothing
+  // in the application recovered it.
+  //
+  // Asserted on the source rather than by driving Stripe: the shape of this
+  // bug is an omission, and an omission is exactly what a source check sees.
+  const checkout = readFileSync(join(root, "src", "app", "api", "checkout", "route.ts"), "utf8");
+  assert.ok(
+    /attachProviderRef\(\s*"stripe"/.test(checkout),
+    "the checkout route does not store the Stripe session id — the return page " +
+      "will have nothing to verify against",
+  );
+
+  const stripe = readFileSync(
+    join(root, "src", "lib", "payments", "providers", "stripe.ts"),
+    "utf8",
+  );
+  assert.ok(
+    /sessionId/.test(stripe),
+    "createCheckoutSession does not return the session id",
+  );
+
+  const verify = readFileSync(
+    join(root, "src", "app", "api", "payments", "verify", "route.ts"),
+    "utf8",
+  );
+  assert.ok(
+    /retrieveSession\(/.test(verify),
+    "the verify route never asks Stripe anything — a missed webhook is unrecoverable",
+  );
+  // And the session it asks about must be proven to be this payment's.
+  assert.ok(
+    /verified\.reference\s*!==\s*reference/.test(verify),
+    "the verify route settles on a Stripe session without checking it belongs " +
+      "to the reference being verified",
+  );
+
+  // A terminal refusal must be recorded, and an UNKNOWN status must not be.
+  assert.ok(
+    /markPaymentFailed\(/.test(verify),
+    "a refused payment is never written off; it polls for ever",
+  );
+  assert.ok(
+    /isTerminalFailure/.test(verify),
+    "refusal is decided inline rather than by a named, auditable list",
+  );
+  return "the id is stored, the return verifies, and the session must match";
+});
+
 console.log("");
 console.log(`${results.filter(Boolean).length}/${results.length} checks passed`);
 process.exit(failures > 0 ? 1 : 0);

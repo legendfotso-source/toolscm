@@ -40,18 +40,32 @@ export function AdminInbox() {
   const [messages, setMessages] = useState<Message[] | undefined>(undefined);
   const [busy, setBusy] = useState<string | null>(null);
 
-  const load = async () => {
+  // Fetching and storing are separated on purpose. When this function also
+  // called setMessages, the only way to load on mount was to call it from the
+  // effect body, which (a) React's own lint rule rejects, because it cannot
+  // see that the write happens after an await rather than during the render,
+  // and (b) left a real defect behind it: the response could land after the
+  // page had been navigated away from, and the write would then be made
+  // against an unmounted component. Returning the rows lets each caller decide
+  // whether it still wants them.
+  const fetchMessages = async (): Promise<Message[]> => {
     try {
       const response = await fetch("/api/admin/contact");
       const payload = (await response.json()) as { messages?: Message[] };
-      setMessages(payload.messages ?? []);
+      return payload.messages ?? [];
     } catch {
-      setMessages([]);
+      return [];
     }
   };
 
   useEffect(() => {
-    void load();
+    let alive = true;
+    void fetchMessages().then((rows) => {
+      if (alive) setMessages(rows);
+    });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const change = async (id: string, status: Message["status"]) => {
@@ -62,7 +76,7 @@ export function AdminInbox() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id, status }),
       });
-      await load();
+      setMessages(await fetchMessages());
     } finally {
       setBusy(null);
     }

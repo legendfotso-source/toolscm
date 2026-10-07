@@ -47,7 +47,7 @@ export async function createCheckoutSession(input: {
   description: string;
   successUrl: string;
   cancelUrl: string;
-}): Promise<{ url: string }> {
+}): Promise<{ url: string; sessionId: string }> {
   const response = await fetch(`${BASE}/checkout/sessions`, {
     method: "POST",
     headers: {
@@ -72,6 +72,7 @@ export async function createCheckoutSession(input: {
   });
 
   const payload = (await response.json().catch(() => null)) as {
+    id?: string;
     url?: string;
     error?: { message?: string };
   } | null;
@@ -82,7 +83,17 @@ export async function createCheckoutSession(input: {
     );
   }
 
-  return { url: payload.url };
+  // The session id is returned as well as the url, and the caller stores it.
+  //
+  // It was discarded before, and that one omission was the difference between
+  // a card payment that activates and one that does not. `retrieveSession`
+  // takes STRIPE's session id, not our reference — so with the id thrown away
+  // there was nothing the return page could ask about, and the verify route
+  // answered "pending" for Stripe unconditionally. Entitlement then rested
+  // entirely on the webhook: if STRIPE_WEBHOOK_SECRET was unset, or the
+  // endpoint was misconfigured, or Stripe's delivery failed, the customer was
+  // charged and never upgraded, and nothing in the application recovered it.
+  return { url: payload.url, sessionId: payload.id ?? "" };
 }
 
 /**

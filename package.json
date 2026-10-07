@@ -19,7 +19,8 @@
     "test:config": "node tests/run-config-tests.mjs",
     "test:layout": "node tests/run-layout-tests.mjs",
     "test:access": "node tests/run-access-tests.mjs",
-    "paste-file": "node scripts/build-paste-file.mjs"
+    "paste-file": "node scripts/build-paste-file.mjs",
+    "test:notify": "node tests/run-notify-tests.mjs"
   },
   "dependencies": {
     "@cantoo/pdf-lib": "^2.11.0",
@@ -51,5 +52,5 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   },
-  "description": "Outils PDF et image gratuits, trait\u00e9s dans le navigateur."
+  "description": "Outils PDF et image gratuits, traités dans le navigateur."
 }
