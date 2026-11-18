@@ -6,20 +6,25 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
 /**
- * The 3D set behind the homepage. Fixed to the viewport, it follows the
+ * The 3D set behind the homepage, fixed to the viewport and driven by the
  * section being read (`state.current` = section index + progress, 0 → 5).
  *
- *  0  The emblem: a violet-chrome document with its folded corner (the
- *     Tools.cm mark), circled by dozens of files — PDF, Word, JPG.
- *  1  The problem: the files scatter and swell. Too heavy to send, too
- *     many to find.
- *  2  The solution: three chrome rings appear; the files stream through
- *     them and come out small and in order.
- *  3  The tools: the document steps back, data streams cross the page.
- *  4  The end: the document returns, ready.
+ * Unlike a static emblem with things orbiting it, this one is a small film
+ * about paper. Real pages — PDF, Word, photo — that bend as they move, and a
+ * camera that travels with them:
  *
- * Reflections come from a studio environment computed on the spot
- * (RoomEnvironment): no image to download.
+ *  0  A spiral of pages turning slowly, like a rolodex of your documents.
+ *  1  The problem: the pages blow apart, crumple and swell. Too heavy, too
+ *     many, in the wrong order.
+ *  2  The solution: a sheet of glass with a violet scan line. As you scroll,
+ *     the pages fall through it one by one and come out flat, small and
+ *     stacked.
+ *  3  The tools: the stack settles, a single glass document is lifted from it.
+ *  4  The end: that one clean file, upright, ready to send.
+ *
+ * Page bending is done on the CPU — a few hundred vertices — so it works the
+ * same on every GPU. Reflections come from a studio environment computed on
+ * the spot: no image to download.
  */
 
 type Props = { state: React.RefObject<number>; onFail: () => void };
@@ -29,38 +34,66 @@ const smooth = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 const mix = (a: number, b: number, t: number) => a + (b - a) * t;
+const seedOf = (i: number, k: number) => {
+  const x = Math.sin(i * 127.1 + k * 311.7) * 43758.5453;
+  return x - Math.floor(x);
+};
 
-function fibonacci(n: number, r: number) {
-  const pts: THREE.Vector3[] = [];
-  const phi = Math.PI * (3 - Math.sqrt(5));
-  for (let i = 0; i < n; i++) {
-    const y = 1 - (i / (n - 1)) * 2;
-    const rr = Math.sqrt(1 - y * y);
-    const th = phi * i;
-    pts.push(new THREE.Vector3(Math.cos(th) * rr * r * 1.2, y * r * 1.15, Math.sin(th) * rr * r));
+const PW = 1.6;
+const PH = 2.26;
+
+/** A page drawn on a canvas: header band, a badge, lines of text or a photo. */
+function pageTexture(kind: number, renderer: THREE.WebGLRenderer) {
+  const c = document.createElement("canvas");
+  c.width = 320;
+  c.height = 452;
+  const g = c.getContext("2d")!;
+  const colours = ["#e5484d", "#2f6fed", "#f5a524", "#7c3aed"];
+  const labels = ["PDF", "DOC", "JPG", "PDF"];
+  g.fillStyle = "#fbfaff";
+  g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = colours[kind];
+  g.fillRect(0, 0, c.width, 14);
+  // Badge
+  g.beginPath();
+  g.roundRect(24, 36, 74, 34, 8);
+  g.fill();
+  g.fillStyle = "#fff";
+  g.font = "bold 20px system-ui, sans-serif";
+  g.fillText(labels[kind], 36, 60);
+  if (kind === 2) {
+    // A photo: sky, sun, hills.
+    const grd = g.createLinearGradient(0, 96, 0, 300);
+    grd.addColorStop(0, "#c4b5fd");
+    grd.addColorStop(1, "#fde68a");
+    g.fillStyle = grd;
+    g.fillRect(24, 96, 272, 220);
+    g.fillStyle = "#fff7";
+    g.beginPath();
+    g.arc(220, 150, 26, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = "#6d28d9";
+    g.beginPath();
+    g.moveTo(24, 316);
+    g.lineTo(110, 220);
+    g.lineTo(170, 270);
+    g.lineTo(230, 200);
+    g.lineTo(296, 316);
+    g.fill();
+  } else {
+    g.fillStyle = "#1e1240";
+    g.fillRect(24, 100, 200, 16);
   }
-  return pts;
-}
-
-/** The mark: a page with its top-right corner folded. */
-function pageShape() {
-  const w = 2.2;
-  const h = 2.8;
-  const f = 0.75; // fold size
-  const r = 0.18;
-  const x = -w / 2;
-  const y = -h / 2;
-  const s = new THREE.Shape();
-  s.moveTo(x + r, y);
-  s.lineTo(x + w - r, y);
-  s.quadraticCurveTo(x + w, y, x + w, y + r);
-  s.lineTo(x + w, y + h - f);
-  s.lineTo(x + w - f, y + h);
-  s.lineTo(x + r, y + h);
-  s.quadraticCurveTo(x, y + h, x, y + h - r);
-  s.lineTo(x, y + r);
-  s.quadraticCurveTo(x, y, x + r, y);
-  return { s, w, h, f };
+  g.fillStyle = "#d4d0e4";
+  const top = kind === 2 ? 340 : 140;
+  for (let y = top; y < 430; y += 20) {
+    const w = 272 * (0.55 + 0.45 * Math.abs(Math.sin(y * 1.7)));
+    g.fillRect(24, y, w, 7);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  return t;
 }
 
 export default function Monde3D({ state, onFail }: Props) {
@@ -99,166 +132,150 @@ export default function Monde3D({ state, onFail }: Props) {
     scene.environment = d(pmrem.fromScene(new RoomEnvironment(), 0.04).texture);
     pmrem.dispose();
 
-    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 200);
-    camera.position.set(0, 0, 14);
+    const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 200);
+    const look = new THREE.Vector3();
 
-    const key = new THREE.DirectionalLight(0xffffff, 1.2);
-    key.position.set(4, 6, 8);
+    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    key.position.set(3, 7, 6);
     scene.add(key);
-    const redLight = new THREE.PointLight(0xff3b5c, 0, 30, 1.5);
-    redLight.position.set(-5, -2, 5);
+    const rim = new THREE.DirectionalLight(0xa78bfa, 1.2);
+    rim.position.set(-6, 2, -4);
+    scene.add(rim);
+    const redLight = new THREE.PointLight(0xff3b5c, 0, 30, 1.4);
+    redLight.position.set(-3, 1, 4);
     scene.add(redLight);
-    const violetLight = new THREE.PointLight(0xa78bfa, 0, 30, 1.5);
-    violetLight.position.set(6, 3, 4);
-    scene.add(violetLight);
-
-    const chromeViolet = d(new THREE.MeshPhysicalMaterial({ color: 0xb69cff, metalness: 1, roughness: 0.12, envMapIntensity: 1.3, clearcoat: 0.5 }));
-    const chrome = d(new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 1, roughness: 0.1, envMapIntensity: 1.2 }));
-    const lilac = d(new THREE.MeshPhysicalMaterial({ color: 0xddd6fe, metalness: 0.2, roughness: 0.2, clearcoat: 1 }));
-    const deep = d(new THREE.MeshPhysicalMaterial({ color: 0x5b21b6, metalness: 0.3, roughness: 0.25, clearcoat: 1 }));
-    // File types: PDF red, Word blue, JPG amber, plain white.
-    const fileMats = [
-      d(new THREE.MeshPhysicalMaterial({ color: 0xe5484d, metalness: 0.1, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 })),
-      d(new THREE.MeshPhysicalMaterial({ color: 0x2f6fed, metalness: 0.1, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 })),
-      d(new THREE.MeshPhysicalMaterial({ color: 0xf5a524, metalness: 0.1, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.08 })),
-      d(new THREE.MeshPhysicalMaterial({ color: 0xf8f7ff, metalness: 0.05, roughness: 0.25, clearcoat: 1, clearcoatRoughness: 0.08 })),
-      deep,
-    ];
+    const scanLight = new THREE.PointLight(0x8b5cf6, 0, 12, 1.2);
+    scene.add(scanLight);
 
     const world = new THREE.Group();
     scene.add(world);
 
-    // ── The emblem: the folded page ─────────────────────────────────────
-    const emblem = new THREE.Group();
-    const { s: shape, w, h, f } = pageShape();
-    const page = new THREE.Mesh(d(new THREE.ExtrudeGeometry(shape, { depth: 0.32, bevelEnabled: true, bevelThickness: 0.1, bevelSize: 0.08, bevelSegments: 8, curveSegments: 24 })), chromeViolet);
-    page.geometry.translate(0, 0, -0.16);
-    emblem.add(page);
-    const foldShape = new THREE.Shape();
-    foldShape.moveTo(w / 2 - f, h / 2);
-    foldShape.lineTo(w / 2, h / 2 - f);
-    foldShape.lineTo(w / 2 - f + 0.08, h / 2 - f + 0.08);
-    foldShape.closePath();
-    const fold = new THREE.Mesh(d(new THREE.ExtrudeGeometry(foldShape, { depth: 0.12, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.03, bevelSegments: 4 })), lilac);
-    fold.position.z = 0.3;
-    emblem.add(fold);
-    const lineGeo = d(new RoundedBoxGeometry(1, 0.16, 0.08, 3, 0.06));
-    [[1.3, 0.25], [1.3, -0.2], [0.8, -0.65]].forEach(([len, y]) => {
-      const line = new THREE.Mesh(lineGeo, deep);
-      line.scale.x = len;
-      line.position.set(-0.45 + len / 2 - 0.2, y, 0.3);
-      emblem.add(line);
-    });
-    world.add(emblem);
-
-    // ── The rings the files pass through (solution) ─────────────────────
-    const ringGeo = d(new THREE.TorusGeometry(1.25, 0.09, 24, 96));
-    const rings = [-3.4, 0, 3.4].map((x) => {
-      const m = new THREE.Mesh(ringGeo, chrome);
-      m.position.set(x, -0.2, 0);
-      m.rotation.y = Math.PI / 2;
-      m.scale.setScalar(0.001);
-      world.add(m);
-      return m;
-    });
-
-    // ── The files ───────────────────────────────────────────────────────
-    const N = small ? 54 : 84;
-    const fileGeo = d(new RoundedBoxGeometry(0.4, 0.52, 0.07, 3, 0.05));
-    const shell = fibonacci(N, 2.6);
-    const seed = (i: number, k: number) => {
-      const x = Math.sin(i * 127.1 + k * 311.7) * 43758.5453;
-      return x - Math.floor(x);
+    // ── The pages ───────────────────────────────────────────────────────
+    const N = small ? 18 : 30;
+    const SEG = 18;
+    const kinds = [0, 1, 2, 3].map((k) =>
+      d(
+        new THREE.MeshPhysicalMaterial({
+          map: d(pageTexture(k, renderer)),
+          roughness: 0.38,
+          clearcoat: 0.55,
+          clearcoatRoughness: 0.25,
+          side: THREE.DoubleSide,
+        }),
+      ),
+    );
+    type Page = {
+      mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshPhysicalMaterial>;
+      base: Float32Array;
+      chaos: THREE.Vector3;
+      spin: THREE.Euler;
+      swell: number;
+      jitter: number;
     };
-    const files = shell.map((p, i) => {
-      const ex = new THREE.Vector3((seed(i, 1) - 0.5) * 26, (seed(i, 2) - 0.5) * 16, (seed(i, 3) - 0.5) * 10 - 2);
-      const scatter = new THREE.Vector3((seed(i, 4) - 0.5) * 17, (seed(i, 5) - 0.5) * 10, (seed(i, 6) - 0.5) * 6);
-      const rot = new THREE.Euler(seed(i, 9) * 6, seed(i, 10) * 6, seed(i, 11) * 6);
-      const heavy = 1.6 + seed(i, 12) * 1.4;
-      const lane = seed(i, 13);
-      const kind = i % 7 === 0 ? 4 : i % 4;
-      return { shell: p, ex, scatter, rot, heavy, lane, kind, phase: i / N };
-    });
-    const byKind = [0, 1, 2, 3, 4].map((k) => files.filter((x) => x.kind === k));
-    const meshes = byKind.map((list, k) => {
-      const im = new THREE.InstancedMesh(fileGeo, fileMats[k], Math.max(1, list.length));
-      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      world.add(im);
-      return im;
-    });
-
-    // ── Data streams crossing the page ──────────────────────────────────
-    const bitGeo = d(new RoundedBoxGeometry(0.16, 0.16, 0.16, 2, 0.04));
-    const STEP = 0.3;
-    type Stream = { a: THREE.InstancedMesh; b: THREE.InstancedMesh; n: number; states: THREE.Vector3[][]; phase: number };
-    const makeStream = (n: number, states: THREE.Vector3[][], phase: number): Stream => {
-      const a = new THREE.InstancedMesh(bitGeo, chromeViolet, Math.max(1, Math.ceil(n / 2)));
-      const b = new THREE.InstancedMesh(bitGeo, lilac, Math.max(1, Math.ceil(n / 2)));
-      a.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      b.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      if (n > 0) {
-        scene.add(a);
-        scene.add(b);
-      }
-      return { a, b, n, states, phase };
-    };
-    const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
-    // Text sits on the left (x < -1): streams pass right, top or bottom.
-    const streams: Stream[] = [
-      makeStream(small ? 70 : 110, [
-        [V(-14, -6.2, -1), V(-4, -5, 1.5), V(2.6, -1, 3.2), V(6, 2.4, 2.4), V(14, 5.5, -1)],
-        [V(3, -13, -1), V(4.5, -8.5, 0), V(7, -8, 1), V(10.5, -6, 0), V(16, -5, -2)],
-        [V(-14, -5.5, -1), V(-3, -4.4, 1), V(3, -0.2, 2.6), V(8, 1.6, 1.5), V(14, 6, -1)],
-        [V(14, -1.2, -4), V(5, -0.2, -3), V(0, -1.6, -3), V(-5, -0.4, -3), V(-14, -1.4, -4)],
-        [V(3, 9.5, -1), V(2.4, 4.2, 2), V(3.6, 0, 3.4), V(6.5, -3.6, 2.2), V(12, -8, -1)],
-      ], 0),
-      makeStream(small ? 0 : 100, [
-        [V(-14, -7.2, -2), V(-2, -6, 0), V(3.4, -2.8, 3), V(8, -0.6, 1.5), V(14, -2, -2)],
-        [V(5, -13, -3), V(7, -9.5, -1), V(9, -9, -1), V(12, -7.5, -2), V(17, -6, -4)],
-        [V(14, 6.5, -1), V(7.5, 3.4, 1.5), V(4, 2.8, 2), V(1.6, 4, 1), V(-1, 9, -1)],
-        [V(14, -4.6, -4), V(5, -3.6, -3), V(0, -5, -3), V(-5, -3.6, -3), V(-14, -4.8, -4)],
-        [V(14, 7.5, -1), V(7, 3, 2), V(3.4, 0.2, 3.2), V(1.8, -3.4, 2.2), V(0, -9, -1)],
-      ], 1.7),
-    ].filter((c) => c.n > 0);
-
-    const tmp = Array.from({ length: 5 }, () => new THREE.Vector3());
-    const curve = new THREE.CatmullRomCurve3(tmp, false, "centripetal");
-    const pos = new THREE.Vector3();
-    const q = new THREE.Quaternion();
-    const m4 = new THREE.Matrix4();
-    const sc = new THREE.Vector3(1, 1, 1);
-    let narrowStreams = false;
-
-    function placeStream(c: Stream, s: number, t: number) {
-      const i = Math.min(3, Math.floor(s));
-      const k0 = smooth(0, 1, s - i);
-      const A = c.states[i];
-      const B = c.states[Math.min(4, i + 1)];
-      for (let k = 0; k < 5; k++) {
-        tmp[k].lerpVectors(A[k], B[k], k0);
-        if (!reduced) tmp[k].y += Math.sin(t * 0.7 + k * 1.3 + c.phase) * 0.25;
-        if (narrowStreams) {
-          tmp[k].x *= 0.55;
-          tmp[k].y = tmp[k].y * 0.2 + 3.4;
-        }
-      }
-      curve.updateArcLengths();
-      const L = curve.getLength();
-      const shift = ((s * 2.6 + t * (reduced ? 0 : 0.22) + c.phase) % 1) * STEP;
-      let ia = 0;
-      let ib = 0;
-      for (let k = 0; k < c.n; k++) {
-        const u = Math.min(0.999, Math.max(0, (k * STEP + shift) / L));
-        curve.getPointAt(u, pos);
-        q.setFromEuler(new THREE.Euler(k * 0.7 + t * 0.5, k * 0.3, 0));
-        sc.setScalar(u < 0.999 ? 0.6 + 0.4 * Math.abs(Math.sin(k * 1.7)) : 0);
-        m4.compose(pos, q, sc);
-        if (k % 2) c.a.setMatrixAt(ia++, m4);
-        else c.b.setMatrixAt(ib++, m4);
-      }
-      c.a.instanceMatrix.needsUpdate = true;
-      c.b.instanceMatrix.needsUpdate = true;
+    const pages: Page[] = [];
+    for (let i = 0; i < N; i++) {
+      const geo = d(new THREE.PlaneGeometry(PW, PH, 1, SEG));
+      const mesh = new THREE.Mesh(geo, kinds[i % 7 === 3 ? 2 : i % 4 === 1 ? 1 : i % 5 === 2 ? 3 : 0]);
+      world.add(mesh);
+      pages.push({
+        mesh,
+        base: Float32Array.from(geo.attributes.position.array as Float32Array),
+        chaos: new THREE.Vector3(0.4 + (seedOf(i, 1) - 0.5) * 7.5, (seedOf(i, 2) - 0.5) * 5.6, -1 + (seedOf(i, 3) - 0.6) * 5),
+        spin: new THREE.Euler(seedOf(i, 4) * 6, seedOf(i, 5) * 6, seedOf(i, 6) * 6),
+        swell: 1.05 + seedOf(i, 7) * 0.45,
+        jitter: (seedOf(i, 8) - 0.5) * 2.4,
+      });
     }
+
+    /** Bend a page: `curl` rolls it up along its height (radians), `twist` across it. */
+    function bend(p: Page, curl: number, twist: number) {
+      const pos = p.mesh.geometry.attributes.position as THREE.BufferAttribute;
+      const a = pos.array as Float32Array;
+      const c = Math.abs(curl) < 0.002 ? 0.002 * Math.sign(curl || 1) : curl;
+      const R = PH / c;
+      for (let k = 0; k < pos.count; k++) {
+        const x = p.base[k * 3];
+        const y = p.base[k * 3 + 1];
+        const u = y / PH + 0.5; // 0 at the bottom edge, 1 at the top
+        const ang = c * u;
+        a[k * 3] = x;
+        a[k * 3 + 1] = -PH / 2 + R * Math.sin(ang);
+        a[k * 3 + 2] = R * (1 - Math.cos(ang)) + twist * x * (u - 0.5) * 1.4;
+      }
+      pos.needsUpdate = true;
+      p.mesh.geometry.computeVertexNormals();
+    }
+
+    // ── The glass scanner ───────────────────────────────────────────────
+    const scanner = new THREE.Group();
+    const glass = new THREE.Mesh(
+      d(new RoundedBoxGeometry(4.6, 0.12, 3.4, 4, 0.06)),
+      d(
+        new THREE.MeshPhysicalMaterial({
+          color: 0xffffff,
+          metalness: 0,
+          roughness: 0.04,
+          transmission: small ? 0 : 1,
+          transparent: small,
+          opacity: small ? 0.35 : 1,
+          thickness: 0.6,
+          ior: 1.45,
+          envMapIntensity: 1.4,
+          attenuationColor: new THREE.Color(0xc4b5fd),
+          attenuationDistance: 2.5,
+        }),
+      ),
+    );
+    scanner.add(glass);
+    const beamMat = d(new THREE.MeshBasicMaterial({ color: 0xa78bfa, toneMapped: false }));
+    const beam = new THREE.Mesh(d(new THREE.BoxGeometry(4.7, 0.025, 0.04)), beamMat);
+    beam.position.y = 0.075;
+    scanner.add(beam);
+    const frameMat = d(new THREE.MeshPhysicalMaterial({ color: 0xd8ccff, metalness: 1, roughness: 0.15 }));
+    [-1.73, 1.73].forEach((z) => {
+      const bar = new THREE.Mesh(d(new RoundedBoxGeometry(4.75, 0.16, 0.08, 2, 0.03)), frameMat);
+      bar.position.z = z;
+      scanner.add(bar);
+    });
+    scanner.scale.setScalar(0.001);
+    world.add(scanner);
+
+    // ── The final file: one glass document ─────────────────────────────
+    const finalDoc = new THREE.Group();
+    const docShape = new THREE.Shape();
+    const fw = PW * 1.05;
+    const fh = PH * 1.05;
+    const fold = 0.45;
+    docShape.moveTo(-fw / 2, -fh / 2);
+    docShape.lineTo(fw / 2, -fh / 2);
+    docShape.lineTo(fw / 2, fh / 2 - fold);
+    docShape.lineTo(fw / 2 - fold, fh / 2);
+    docShape.lineTo(-fw / 2, fh / 2);
+    docShape.closePath();
+    const docGeo = d(new THREE.ExtrudeGeometry(docShape, { depth: 0.12, bevelEnabled: true, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 6 }));
+    docGeo.center();
+    const docMat = d(
+      new THREE.MeshPhysicalMaterial({
+        color: 0xb69cff,
+        metalness: 0.2,
+        roughness: 0.08,
+        transmission: 0,
+        thickness: 0.4,
+        ior: 1.5,
+        clearcoat: 1,
+        envMapIntensity: 1.5,
+        attenuationColor: new THREE.Color(0x6d28d9),
+        attenuationDistance: 0.9,
+      }),
+    );
+    finalDoc.add(new THREE.Mesh(docGeo, docMat));
+    const tickMat = d(new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0.6, roughness: 0.15, emissive: 0x6d28d9, emissiveIntensity: 0.2 }));
+    const tickCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(-0.38, 0, 0), new THREE.Vector3(-0.1, -0.28, 0), new THREE.Vector3(0.42, 0.32, 0)], false, "catmullrom", 0.1);
+    const tick = new THREE.Mesh(d(new THREE.TubeGeometry(tickCurve, 40, 0.07, 12, false)), tickMat);
+    tick.position.z = 0.16;
+    finalDoc.add(tick);
+    finalDoc.scale.setScalar(0.001);
+    world.add(finalDoc);
 
     // ── Size, pointer, visibility ───────────────────────────────────────
     let width = 1;
@@ -288,11 +305,19 @@ export default function Monde3D({ state, onFail }: Props) {
     const onVisibility = () => document.visibilityState === "visible" && start();
     document.addEventListener("visibilitychange", onVisibility);
 
+    // Camera path: one shot per section.
+    const shots = [
+      { p: [0, 2.6, 10.2], l: [0, -0.1, 0] },
+      { p: [-1.5, 1.2, 14], l: [0, 0, 0] },
+      { p: [0, 5.2, 9.5], l: [0, -0.4, 0] },
+      { p: [2.5, 2.4, 11], l: [0, -0.6, 0] },
+      { p: [0, 0.4, 9], l: [0, 0, 0] },
+    ];
+
     let s = state.current ?? 0;
     const clock = new THREE.Clock();
-    const o = new THREE.Object3D();
-    const v = new THREE.Vector3();
-    const counters = [0, 0, 0, 0, 0];
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
 
     function frame() {
       raf = 0;
@@ -303,92 +328,118 @@ export default function Monde3D({ state, onFail }: Props) {
       mouse.lx += (mouse.x - mouse.lx) * 0.05;
       mouse.ly += (mouse.y - mouse.ly) * 0.05;
       const narrow = width / height < 0.9;
-      const arrive = reduced ? 1 : smooth(0.2, 2.6, t);
+      const arrive = reduced ? 1 : smooth(0.1, 2.2, t);
 
-      const targets = narrow
-        ? [
-            { x: 0, y: 2.8, z: 0, e: 0.46 },
-            { x: 0, y: 2.9, z: -3, e: 0.44 },
-            { x: 0, y: 3.0, z: 0, e: 0.4 },
-            { x: 0.4, y: 3.1, z: -4, e: 0.32 },
-            { x: 0, y: 2.8, z: 0, e: 0.46 },
-          ]
-        : [
-            { x: 3.3, y: 0.1, z: 0, e: 0.92 },
-            { x: 3.4, y: 0.4, z: -3, e: 0.75 },
-            { x: 3.4, y: 0, z: 0, e: 0.8 },
-            { x: 5.0, y: 2.8, z: -4, e: 0.45 },
-            { x: 3.4, y: 0.1, z: 0, e: 0.92 },
-          ];
+      // Camera
       const i0 = Math.min(3, Math.floor(s));
       const k0 = smooth(0, 1, s - i0);
-      const A = targets[i0];
-      const B = targets[Math.min(4, i0 + 1)];
-      world.position.set(mix(A.x, B.x, k0), mix(A.y, B.y, k0), mix(A.z, B.z, k0));
-      world.scale.setScalar(mix(A.e, B.e, k0));
-      world.rotation.set(mouse.ly * 0.15, mouse.lx * 0.25, 0);
+      const A = shots[i0];
+      const B = shots[Math.min(4, i0 + 1)];
+      const zoomOut = narrow ? 1.55 : 1;
+      camera.position.set(
+        mix(A.p[0], B.p[0], k0) + mouse.lx * 0.6,
+        mix(A.p[1], B.p[1], k0) - mouse.ly * 0.4,
+        mix(A.p[2], B.p[2], k0) * zoomOut,
+      );
+      look.set(mix(A.l[0], B.l[0], k0), mix(A.l[1], B.l[1], k0), mix(A.l[2], B.l[2], k0));
+      camera.lookAt(look);
+      // The scene sits to the right of the text on desktop, above it on phones.
+      if (narrow) camera.setViewOffset(width, height, 0, height * 0.3, width, height);
+      else camera.setViewOffset(width, height, -width * 0.2, 0, width, height);
 
-      const scatter = smooth(0.75, 1.35, s) * (1 - smooth(1.75, 2.3, s));
-      const swell = smooth(1.0, 1.45, s) * (1 - smooth(1.8, 2.2, s));
-      const flow = smooth(1.85, 2.35, s) * (1 - smooth(3.2, 3.8, s));
+      const chaos = smooth(0.7, 1.3, s) * (1 - smooth(1.6, 2.05, s));
+      const scan = smooth(1.75, 2.05, s) * (1 - smooth(3.3, 3.8, s));
+      const flowP = Math.min(1, Math.max(0, (s - 2) / 0.95)); // progress through the solution section
+      const settle = smooth(2.85, 3.4, s);
+      const finale = smooth(3.55, 4.25, s);
 
-      emblem.rotation.set(Math.sin(t * 0.4) * 0.1 * m, -0.35 + Math.sin(t * 0.3) * 0.3 * m + s * 0.6, Math.sin(t * 0.5) * 0.04 * m);
-      emblem.scale.setScalar(1 - flow * 0.45);
-      emblem.position.y = flow * 1.9;
-      chromeViolet.roughness = 0.12 + swell * 0.3;
-      rings.forEach((r, k) => {
-        r.scale.setScalar(Math.max(0.001, flow * (1 - k * 0.12)));
-        r.rotation.x = t * 0.4 * m + k;
+      scanner.scale.setScalar(Math.max(0.001, scan * 0.78));
+      scanner.position.y = 0.1;
+      beamMat.color.setHSL(0.74, 0.9, 0.62 + 0.12 * Math.sin(t * 4) * m);
+      scanLight.intensity = 22 * scan;
+      redLight.intensity = 36 * chaos;
+      key.intensity = 1.6 - 0.4 * chaos;
+
+      pages.forEach((p, i) => {
+        // 0 · spiral
+        const a = i * (small ? 0.62 : 0.42) + t * 0.18 * m + s * 0.8;
+        const spiralY = (i - N / 2) * (small ? 0.09 : 0.065);
+        let x = Math.cos(a) * 1.55;
+        let y = spiralY;
+        let z = Math.sin(a) * 1.55;
+        e.set(0, -a + Math.PI / 2, 0);
+        // fly-in at load
+        if (arrive < 1) {
+          x = mix(p.chaos.x * 2.2, x, arrive);
+          y = mix(p.chaos.y * 2.2, y, arrive);
+          z = mix(p.chaos.z * 2 - 6, z, arrive);
+        }
+        let curl = 0.12 + 0.05 * Math.sin(t + i) * m;
+        let twist = 0;
+        let size = 1;
+
+        // 1 · chaos
+        if (chaos > 0) {
+          x = mix(x, p.chaos.x, chaos);
+          y = mix(y, p.chaos.y, chaos);
+          z = mix(z, p.chaos.z, chaos);
+          e.set(mix(e.x, p.spin.x + t * 0.3 * m, chaos), mix(e.y, p.spin.y + t * 0.2 * m, chaos), mix(e.z, p.spin.z, chaos));
+          curl = mix(curl, 0.9 * Math.sin(i * 1.3 + t * 0.8 * m), chaos);
+          twist = mix(0, Math.sin(i * 2.1 + t * m) * 0.6, chaos);
+          size = mix(1, p.swell, chaos);
+        }
+
+        // 2 · fall through the scanner into a neat stack
+        if (scan > 0) {
+          const own = i / N;
+          const through = Math.min(1, Math.max(0, (flowP - own * 0.85) / 0.18));
+          const queueX = p.jitter * 0.7;
+          const queueY = 2.6 + (own - flowP) * 3;
+          const stackY = -1.55 + i * 0.035 * (1 - settle * 0.4);
+          const fall = smooth(0, 1, through);
+          // above: hovering in a loose queue; below: flat in the stack
+          const ax = mix(queueX, 0, fall);
+          const ay = mix(Math.max(queueY, 1.1), stackY, fall);
+          const az = mix(-0.6 + (own - 0.5) * 1.2, 0, fall);
+          x = mix(x, ax, scan);
+          y = mix(y, ay, scan);
+          z = mix(z, az, scan);
+          const flatX = -Math.PI / 2;
+          e.set(mix(e.x, mix(-0.25, flatX, fall), scan), mix(e.y, mix(p.jitter * 0.3, 0, fall), scan), mix(e.z, mix(p.jitter * 0.2, 0, fall), scan));
+          curl = mix(curl, mix(0.35, 0, fall), scan);
+          twist = mix(twist, 0, scan);
+          size = mix(size, mix(0.82, 0.55, fall), scan);
+        }
+
+        // 4 · the stack recedes behind the final file
+        if (finale > 0) {
+          y = mix(y, -1.9 + i * 0.02, finale);
+          z = mix(z, -1.2, finale);
+          size = mix(size, 0.55, finale);
+        }
+
+        p.mesh.position.set(x, y, z);
+        q.setFromEuler(e);
+        p.mesh.quaternion.copy(q);
+        p.mesh.scale.setScalar(size);
+        bend(p, curl, twist);
       });
 
-      counters.fill(0);
-      byKind.forEach((list, k) => {
-        list.forEach((fi, j) => {
-          v.copy(fi.ex).lerp(fi.shell, arrive);
-          if (scatter > 0) v.lerp(fi.scatter, scatter);
-          const ang = t * 0.12 * m + s * 0.5;
-          let x = v.x * Math.cos(ang) - v.z * Math.sin(ang);
-          let z = v.x * Math.sin(ang) + v.z * Math.cos(ang);
-          let y = v.y;
-          let size = 1 + swell * (fi.heavy - 1);
-          if (flow > 0) {
-            // Through the rings, left to right, shrinking at each one.
-            const u = (fi.phase + t * 0.07 * m + s * 0.3) % 1;
-            const px = -6 + u * 12;
-            const a = fi.lane * Math.PI * 2 + u * 6;
-            const rad = 0.75 * (1 - u * 0.4);
-            x = mix(x, px, flow);
-            y = mix(y, -0.2 + Math.sin(a) * rad, flow);
-            z = mix(z, Math.cos(a) * rad, flow);
-            const shrink = 1.3 - 0.75 * smooth(-3.6, 3.6, px);
-            size = mix(size, shrink, flow);
-          }
-          o.position.set(x, y, z);
-          const disorder = 1 - arrive + scatter;
-          o.rotation.set(fi.rot.x * disorder + t * 0.2 * disorder, fi.rot.y * disorder + flow * 1.57, fi.rot.z * disorder);
-          if (disorder < 0.5 && flow < 0.5) o.lookAt(o.position.clone().multiplyScalar(2));
-          o.scale.setScalar(size);
-          o.updateMatrix();
-          meshes[k].setMatrixAt(counters[k]++, o.matrix);
-          void j;
-        });
-        meshes[k].instanceMatrix.needsUpdate = true;
-      });
+      // 3–4 · one clean glass document rises from the stack
+      const lift = smooth(2.9, 3.5, s);
+      finalDoc.scale.setScalar(Math.max(0.001, lift * (narrow ? 0.8 : 1)));
+      finalDoc.position.set(0, mix(-1.2, 0.3, lift) + Math.sin(t * 0.9) * 0.06 * m, mix(0, 0.6, finale));
+      finalDoc.rotation.set(mix(-1.2, 0, lift), Math.sin(t * 0.5) * 0.35 * m + (1 - finale) * 0.5, 0);
 
-      narrowStreams = narrow;
-      streams.forEach((c) => placeStream(c, s, t));
-
-      redLight.intensity = 40 * swell;
-      violetLight.intensity = 34 * flow + 20 * smooth(3.6, 4.2, s);
-      key.intensity = 1.2 - 0.5 * smooth(0.6, 1.2, s);
-
+      world.rotation.y = mouse.lx * 0.08;
+      world.scale.setScalar(narrow ? 0.78 - 0.12 * scan : 0.82);
       renderer.render(scene, camera);
       raf = requestAnimationFrame(frame);
     }
     start();
 
-    const lost = (e: Event) => {
-      e.preventDefault();
+    const lost = (ev: Event) => {
+      ev.preventDefault();
       onFail();
     };
     renderer.domElement.addEventListener("webglcontextlost", lost);
@@ -400,11 +451,6 @@ export default function Monde3D({ state, onFail }: Props) {
       window.removeEventListener("pointermove", onPointer);
       document.removeEventListener("visibilitychange", onVisibility);
       renderer.domElement.removeEventListener("webglcontextlost", lost);
-      meshes.forEach((im) => im.dispose());
-      streams.forEach((c) => {
-        c.a.dispose();
-        c.b.dispose();
-      });
       disposables.forEach((x) => x.dispose());
       renderer.dispose();
       renderer.domElement.remove();

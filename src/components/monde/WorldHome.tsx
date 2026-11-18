@@ -99,7 +99,7 @@ export function WorldHome() {
       <div ref={bg} className="fixed inset-0 -z-30" style={{ background: BACKGROUNDS[0] }} aria-hidden="true" />
       <div
         ref={word}
-        className="pointer-events-none fixed inset-x-0 top-[13vh] -z-20 select-none text-center text-[31vw] font-black leading-none tracking-[-0.07em] text-[#1e1240] md:bottom-[-1.5vw] md:top-auto md:text-[19vw]"
+        className="pointer-events-none fixed inset-x-0 top-[13vh] -z-20 select-none text-center text-[31vw] font-black leading-none tracking-[-0.07em] text-transparent [-webkit-text-stroke:2px_#1e1240] md:[-webkit-text-stroke:3px_#1e1240] md:bottom-[-1.5vw] md:top-auto md:text-[19vw]"
         aria-hidden="true"
       >
         {t("world.word")}
