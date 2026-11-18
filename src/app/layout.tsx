@@ -24,7 +24,6 @@ export const metadata: Metadata = {
     "supprimer arrière-plan",
     "compresser image",
     "outils pdf gratuits",
-    "Cameroun",
   ],
   authors: [{ name: SITE_NAME }],
   openGraph: {

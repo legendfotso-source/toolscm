@@ -35,7 +35,7 @@ export function Header() {
   }, [menuOpen]);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
+    <header className="site-header sticky top-0 z-40 border-b border-line bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
       <div className="container-page">
         <div className="flex h-16 items-center gap-3">
           <Logo />
@@ -49,12 +49,24 @@ export function Header() {
             {CATEGORY_ORDER.map((category) => (
               <Link
                 key={category}
-                href={`/#${category}`}
-                className="rounded-lg px-3 py-2 text-[14px] font-medium text-ink-soft transition-colors hover:bg-surface-alt hover:text-ink"
+                href={`/outils/${category}`}
+                className={cx(
+                  "rounded-lg px-3 py-2 text-[14px] font-medium transition-colors hover:bg-surface-alt hover:text-ink",
+                  pathname === `/outils/${category}` ? "text-ink" : "text-ink-soft",
+                )}
               >
                 {t(`categories.${category}`)}
               </Link>
             ))}
+            <Link
+              href="/comment-ca-marche"
+              className={cx(
+                "rounded-lg px-3 py-2 text-[14px] font-medium transition-colors hover:bg-surface-alt",
+                pathname === "/comment-ca-marche" ? "text-ink" : "text-ink-soft hover:text-ink",
+              )}
+            >
+              {t("world.navHow")}
+            </Link>
             <Link
               href="/pricing"
               className={cx(
@@ -124,12 +136,24 @@ export function Header() {
             {CATEGORY_ORDER.map((category) => (
               <Link
                 key={category}
-                href={`/#${category}`}
+                href={`/outils/${category}`}
                 className="rounded-lg px-3 py-3 text-[15px] font-medium text-ink hover:bg-surface-alt"
               >
                 {t(`categories.${category}`)}
               </Link>
             ))}
+            <Link
+              href="/outils"
+              className="rounded-lg px-3 py-3 text-[15px] font-medium text-ink hover:bg-surface-alt"
+            >
+              {t("world.navAll")}
+            </Link>
+            <Link
+              href="/comment-ca-marche"
+              className="rounded-lg px-3 py-3 text-[15px] font-medium text-ink hover:bg-surface-alt"
+            >
+              {t("world.navHow")}
+            </Link>
             <Link
               href="/pricing"
               className="rounded-lg px-3 py-3 text-[15px] font-medium text-ink hover:bg-surface-alt"

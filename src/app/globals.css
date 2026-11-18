@@ -143,3 +143,35 @@ body {
     8px -8px,
     -8px 0px;
 }
+
+/* ------------------------------------------------------------------
+   The 3D homepage. Its fixed backdrop goes dark after the first
+   section; the header follows so it stays readable.
+------------------------------------------------------------------ */
+html[data-bg] body {
+  background: transparent;
+}
+html[data-bg="dark"] .site-header {
+  background: rgb(13 10 26 / 0.72);
+  border-color: rgb(255 255 255 / 0.1);
+}
+html[data-bg="dark"] .site-header .text-ink,
+html[data-bg="dark"] .site-header .hover\:text-ink:hover {
+  color: #fff;
+}
+html[data-bg="dark"] .site-header .text-ink-soft {
+  color: rgb(255 255 255 / 0.7);
+}
+html[data-bg="dark"] .site-header .hover\:bg-surface-alt:hover {
+  background: rgb(255 255 255 / 0.08);
+}
+html[data-bg="dark"] .site-header .border-line {
+  border-color: rgb(255 255 255 / 0.18);
+}
+html[data-bg="light"] .site-header {
+  background: rgb(243 240 255 / 0.8);
+  border-color: transparent;
+}
+html[data-bg="dark"] .site-header .bg-white {
+  background: rgb(255 255 255 / 0.08);
+}

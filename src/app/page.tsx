@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { HomeContent } from "@/components/home/HomeContent";
+import { WorldHome } from "@/components/monde/WorldHome";
 import { SITE_NAME, SITE_URL } from "@/lib/site";
 import { usableTools } from "@/lib/tools/registry";
 
@@ -44,7 +44,7 @@ export default function HomePage() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <HomeContent />
+      <WorldHome />
     </>
   );
 }
