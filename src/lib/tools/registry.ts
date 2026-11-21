@@ -1,6 +1,7 @@
 import type { ToolCategory, ToolDefinition } from "@/types/tool";
 import type { Locale } from "@/lib/i18n/dictionaries";
 import { pdfTools } from "./catalog/pdf";
+import { pdfPlusTools } from "./catalog/pdf-plus";
 import { imageTools } from "./catalog/image";
 import { utilityTools } from "./catalog/utility";
 
@@ -9,7 +10,7 @@ import { utilityTools } from "./catalog/utility";
  * Pure data — safe to import from server components, metadata, and the sitemap.
  * Processing code lives separately and is loaded on demand.
  */
-export const TOOLS: ToolDefinition[] = [...pdfTools, ...imageTools, ...utilityTools];
+export const TOOLS: ToolDefinition[] = [...pdfTools, ...pdfPlusTools, ...imageTools, ...utilityTools];
 
 export const CATEGORY_ORDER: ToolCategory[] = ["pdf", "image", "utility"];
 

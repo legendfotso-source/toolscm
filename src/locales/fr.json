@@ -153,7 +153,8 @@
     "wrongPassword": "Ce mot de passe ne correspond pas à ce document. Vérifiez-le et réessayez.",
     "invalidDocx": "Impossible de lire ce document. Seul le format .docx est accepté — les anciens fichiers .doc doivent d'abord être réenregistrés en .docx.",
     "emptyDocument": "Ce document ne contient aucun texte à convertir.",
-    "tooLargeFree": "Ce fichier dépasse la limite de {size} du plan Gratuit. Le plan Pro accepte des fichiers deux fois plus grands."
+    "tooLargeFree": "Ce fichier dépasse la limite de {size} du plan Gratuit. Le plan Pro accepte des fichiers deux fois plus grands.",
+    "noSignature": "Signez dans le cadre (ou importez une photo de votre signature) avant de continuer."
   },
   "faq": {
     "title": "Questions fréquentes"

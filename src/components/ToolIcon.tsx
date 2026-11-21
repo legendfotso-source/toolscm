@@ -154,6 +154,31 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M4 12h16" />
     </>
   ),
+  sign: (
+    <>
+      <path d="M3 17c2.5 0 3.5-9 6-9 1.8 0 .2 7 2.2 7 1.4 0 2-3 3.3-3 1 0 .9 2 2.2 2H21" />
+      <path d="M3 21h18" opacity="0.45" />
+    </>
+  ),
+  scan: (
+    <>
+      <path d="M4 8V5a1 1 0 0 1 1-1h3M20 8V5a1 1 0 0 0-1-1h-3M4 16v3a1 1 0 0 0 1 1h3M20 16v3a1 1 0 0 1-1 1h-3" />
+      <rect x="8" y="7" width="8" height="10" rx="1" />
+    </>
+  ),
+  numbers: (
+    <>
+      <rect x="5" y="3" width="14" height="18" rx="2" />
+      <path d="M10 15.5h4M12 12.5v6" opacity="0.5" />
+      <path d="M9 7h6" />
+    </>
+  ),
+  folder: (
+    <>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+      <path d="m9 13 2 2 4-4" />
+    </>
+  ),
   calendar: (
     <>
       <rect x="3" y="5" width="18" height="16" rx="2" />

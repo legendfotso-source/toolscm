@@ -153,7 +153,8 @@
     "wrongPassword": "That password does not match this document. Check it and try again.",
     "invalidDocx": "This document could not be read. Only the .docx format is accepted — older .doc files must be re-saved as .docx first.",
     "emptyDocument": "This document contains no text to convert.",
-    "tooLargeFree": "This file is larger than the {size} Free plan limit. Pro accepts files twice that size."
+    "tooLargeFree": "This file is larger than the {size} Free plan limit. Pro accepts files twice that size.",
+    "noSignature": "Sign in the box (or import a photo of your signature) before continuing."
   },
   "faq": {
     "title": "Frequently asked questions"
