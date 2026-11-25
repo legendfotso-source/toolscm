@@ -1,0 +1,20 @@
+﻿**********************
+Début de la transcription Windows PowerShell
+Heure de début : 20261125190955
+Nom d'utilisateur : DESKTOP-DS1ESG6\ARTHUR
+Utilisateur runAs :  DESKTOP-DS1ESG6\ARTHUR
+Nom de la configuration : 
+Ordinateur : DESKTOP-DS1ESG6 (Microsoft Windows NT 10.0.19045.0)
+Application hôte : powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\ARTHUR\Downloads\toolscm-github\ENVOYER-TOOLSCM.ps1
+ID de processus : 7444
+PSVersion: 5.1.19041.7844
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.7844
+BuildVersion: 10.0.19041.7844
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Tools.cm -> GitHub, 11/25/2026 19:09:55
+Copie propre existante : mise à jour
