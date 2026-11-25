@@ -21,7 +21,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     // Titles and descriptions are per-tool, in French, the site's primary
     // language. Nothing here is templated boilerplate.
-    title: tool.seoTitle.fr,
+    // Le titre SEO contient déjà « — Tools.cm » : pas de deuxième suffixe.
+    title: { absolute: tool.seoTitle.fr },
     description: tool.seoDescription.fr,
     keywords: tool.keywords,
     alternates: { canonical: `/tool/${tool.id}` },
@@ -31,11 +32,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title: tool.seoTitle.fr,
       description: tool.seoDescription.fr,
       locale: "fr_CM",
+      images: [{ url: "/opengraph-image.jpg", width: 1200, height: 630, alt: "Tools.cm" }],
     },
     twitter: {
-      card: "summary",
+      card: "summary_large_image",
       title: tool.seoTitle.fr,
       description: tool.seoDescription.fr,
+      images: ["/opengraph-image.jpg"],
     },
     robots:
       tool.status === "COMING_SOON"

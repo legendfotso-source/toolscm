@@ -21,7 +21,7 @@ export async function generateMetadata({
   if (!post) return { title: "Guide introuvable" };
 
   return {
-    title: `${post.title} — ${SITE_NAME}`,
+    title: { absolute: `${post.title} — ${SITE_NAME}` },
     description: post.description,
     alternates: { canonical: `/blog/${post.slug}` },
     openGraph: {
@@ -30,6 +30,7 @@ export async function generateMetadata({
       description: post.description,
       publishedTime: post.date,
       url: absoluteUrl(`/blog/${post.slug}`),
+      images: [{ url: "/opengraph-image.jpg", width: 1200, height: 630, alt: "Tools.cm" }],
     },
   };
 }
