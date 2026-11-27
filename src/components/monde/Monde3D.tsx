@@ -2,6 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+
+import { decorerNoel } from "@/components/avis/noel3d";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 
@@ -133,6 +135,8 @@ export default function Monde3D({ state, onFail }: Props) {
     pmrem.dispose();
 
     const camera = new THREE.PerspectiveCamera(32, 1, 0.1, 200);
+    // Décor des fêtes (neige en relief, boules suspendues) : rien hors saison.
+    const noel = decorerNoel(scene, camera, { mobile: window.innerWidth < 768, reduit: reduced });
     const look = new THREE.Vector3();
 
     const key = new THREE.DirectionalLight(0xffffff, 1.6);
@@ -433,6 +437,7 @@ export default function Monde3D({ state, onFail }: Props) {
 
       world.rotation.y = mouse.lx * 0.08;
       world.scale.setScalar(narrow ? 0.78 - 0.12 * scan : 0.82);
+      noel.animer();
       renderer.render(scene, camera);
       raf = requestAnimationFrame(frame);
     }
@@ -446,6 +451,7 @@ export default function Monde3D({ state, onFail }: Props) {
 
     return () => {
       cancelAnimationFrame(raf);
+      noel.liberer();
       raf = -1;
       ro.disconnect();
       window.removeEventListener("pointermove", onPointer);

@@ -59,6 +59,21 @@ const document: LegalDocument = {
       },
     },
     {
+      heading: { fr: "La boîte à idées (le petit engrenage)", en: "The feedback box (the little gear)" },
+      body: {
+        fr: [
+          "Le petit personnage qui se promène sur le site ouvre une boîte à idées. Rien ne part tant que vous n'appuyez pas sur « Envoyer ».",
+          "Ce qui est envoyé : votre message, le type choisi, l'adresse de la page, la langue, le contact si vous en donnez un, et le modèle de votre appareil. Notre serveur le transmet à la console où l'équipe lit les avis de ses sites ; votre adresse IP n'y est gardée que sous forme d'empreinte, pour freiner les abus.",
+          "Pour le faire disparaître : « Cacher le compagnon » dans la boîte à idées. Ce choix est gardé dans votre navigateur.",
+        ],
+        en: [
+          "The little character wandering around the site opens a feedback box. Nothing is sent until you press \"Send\".",
+          "What is sent: your message, the type you picked, the page address, the language, your contact if you give one, and your device model. Our server passes it on to the console where the team reads feedback for its sites; your IP address is kept there only as a hash, to curb abuse.",
+          "To make it go away: \"Hide the helper\" in the feedback box. That choice is kept in your browser.",
+        ],
+      },
+    },
+    {
       heading: { fr: "Ce que nous stockons dans votre navigateur", en: "What we store in your browser" },
       body: {
         fr: [

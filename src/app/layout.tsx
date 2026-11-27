@@ -1,4 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { Compagnon } from "@/components/avis/Compagnon";
+import { Neige } from "@/components/avis/Neige";
+
 import "./globals.css";
 
 import { LocaleProvider } from "@/lib/i18n/LocaleProvider";
@@ -71,6 +74,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <Footer />
           <ServiceWorker />
           <PageViews />
+          <Neige />
+          <Compagnon site="toolscm" nom="Tools.cm" mascotte="engrenage" accent="#6d28d9" cacherSur={["/admin"]} calmeSur={["/tool", "/account", "/payment"]} />
         </LocaleProvider>
       </body>
     </html>
